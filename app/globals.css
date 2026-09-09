@@ -1,8 +1,41 @@
 @import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Node palette, keyed by the node's `kind`. */
+  --node-bg: #ffffff;
+  --node-border: #cbd5e1;
+  --node-text: #171717;
+  --node-note: #64748b;
+
+  --kind-human: #d97706;
+  --kind-document: #2563eb;
+  --kind-table: #0f766e;
+  --kind-view: #7c3aed;
+  --kind-output: #059669;
+
+  /* Floating islands overlaid on the canvas. */
+  --island-bg: rgba(255, 255, 255, 0.82);
+  --island-border: rgba(0, 0, 0, 0.1);
+  --island-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+
+  /* React Flow chrome. */
+  --xy-edge-stroke: #94a3b8;
+  --xy-edge-stroke-selected: #2563eb;
+  --xy-background-pattern-dots-color: #cbd5e1;
+  --xy-minimap-background-color: rgba(255, 255, 255, 0.82);
+  --xy-minimap-node-background-color: #94a3b8;
+  --xy-minimap-mask-background-color: rgba(148, 163, 184, 0.25);
+  --xy-minimap-mask-stroke-color: #64748b;
+  --xy-controls-button-background-color: #ffffff;
+  --xy-controls-button-background-color-hover: #f1f5f9;
+  --xy-controls-button-color: #171717;
+  --xy-controls-button-color-hover: #000000;
+  --xy-controls-button-border-color: #e2e8f0;
+  --xy-attribution-background-color: rgba(255, 255, 255, 0.6);
 }
 
 @theme inline {
@@ -16,11 +49,184 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --node-bg: #171717;
+    --node-border: #3f3f46;
+    --node-text: #ededed;
+    --node-note: #a1a1aa;
+
+    --kind-human: #fbbf24;
+    --kind-document: #60a5fa;
+    --kind-table: #2dd4bf;
+    --kind-view: #a78bfa;
+    --kind-output: #34d399;
+
+    --island-bg: rgba(23, 23, 23, 0.78);
+    --island-border: rgba(255, 255, 255, 0.14);
+    --island-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+
+    --xy-edge-stroke: #52525b;
+    --xy-edge-stroke-selected: #60a5fa;
+    --xy-background-pattern-dots-color: #3f3f46;
+    --xy-minimap-background-color: rgba(23, 23, 23, 0.82);
+    --xy-minimap-node-background-color: #71717a;
+    --xy-minimap-mask-background-color: rgba(255, 255, 255, 0.08);
+    --xy-minimap-mask-stroke-color: #a1a1aa;
+    --xy-controls-button-background-color: #171717;
+    --xy-controls-button-background-color-hover: #27272a;
+    --xy-controls-button-color: #ededed;
+    --xy-controls-button-color-hover: #ffffff;
+    --xy-controls-button-border-color: #3f3f46;
+    --xy-attribution-background-color: rgba(10, 10, 10, 0.6);
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ---------- Floating island (text overlaid on the canvas) ---------- */
+
+.floating-island {
+  border: 1px solid var(--island-border);
+  border-radius: 12px;
+  background: var(--island-bg);
+  padding: 14px 16px;
+  box-shadow: var(--island-shadow);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+/* ---------- Zoom-and-navigate transition ---------- */
+
+/* Fades over the canvas while it flies into the clicked node. */
+.canvas-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: var(--background);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease-in;
+}
+
+.canvas-veil.is-leaving {
+  opacity: 1;
+  transition-delay: 160ms;
+}
+
+/* The destination page fades up as it arrives. */
+.diagram-screen {
+  animation: screen-in 260ms ease-out both;
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-veil,
+  .diagram-screen {
+    animation: none;
+    transition: none;
+  }
+
+  .canvas-veil.is-leaving {
+    opacity: 0;
+  }
+}
+
+/* React Flow's own chrome, styled to match the islands. */
+.react-flow__minimap,
+.react-flow__controls {
+  border: 1px solid var(--island-border);
+  border-radius: 12px;
+  box-shadow: var(--island-shadow);
+  overflow: hidden;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.react-flow__controls {
+  background: var(--island-bg);
+}
+
+.react-flow__controls-button {
+  border-bottom: 1px solid var(--island-border);
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.react-flow__attribution {
+  border-radius: 6px 0 0 0;
+}
+
+/* ---------- Custom process node ---------- */
+
+.process-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--node-border);
+  border-top: 3px solid var(--node-accent, var(--node-border));
+  border-radius: 8px;
+  background: var(--node-bg);
+  color: var(--node-text);
+  text-align: center;
+  font-size: 13px;
+  line-height: 20px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.process-node[data-kind="human"] {
+  --node-accent: var(--kind-human);
+}
+.process-node[data-kind="document"] {
+  --node-accent: var(--kind-document);
+}
+.process-node[data-kind="table"] {
+  --node-accent: var(--kind-table);
+}
+.process-node[data-kind="view"] {
+  --node-accent: var(--kind-view);
+}
+.process-node[data-kind="output"] {
+  --node-accent: var(--kind-output);
+}
+
+.process-node__label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 500;
+}
+
+.process-node__note {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--node-note);
+}
+
+.process-node.is-clickable {
+  cursor: pointer;
+}
+
+.process-node.is-clickable:hover {
+  border-color: var(--node-accent, var(--kind-document));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
 }
