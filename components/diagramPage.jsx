@@ -36,6 +36,20 @@ export default function DiagramPage({ diagram, backHref, backLabel }) {
               {diagram.doc}
             </p>
           )}
+
+          {diagram.related?.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              {diagram.related.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="text-xs opacity-70 underline-offset-4 hover:underline hover:opacity-100"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="floating-island pointer-events-auto shrink-0 !p-1.5">

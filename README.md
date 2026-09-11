@@ -50,6 +50,8 @@ diagrams[key] = {
   title: string,          // page heading
   doc:   string,          // prose paragraph shown above the canvas
   dir?:  "TB" | "LR",     // dagre direction, default "TB"; use "LR" for long flows
+  parent?: string,        // diagram key the back link returns to, default "root"
+  related?: [{ href: string, label: string }], // text links under the doc prose
   nodes: [{
     id:    string,        // unique within this diagram
     label: string,        // "\n" renders as a real line break
@@ -69,6 +71,12 @@ Rules:
 
 - A node's `href` must match another diagram key exactly (`/process/<key>`), or the
   link 404s.
+- `parent` must be an existing diagram key. Set it on drill-downs of a diagram other
+  than `root` (e.g. `inventory-transfers`) so the back link returns there.
+- Only the original feeders connect to `RPC_JobBreakdown`. SAP B1 documents that link to
+  a feeder (Sales Order, Purchase Order, payments…) live in `root` but never add an edge
+  into the view. Documents that link to nothing in `root` get their own diagram,
+  reachable through `related`.
 - `kind` only sets the accent colour. Omit it for a neutral node.
 - Never write `position` or `width` — `lib/layout.js` computes both.
 

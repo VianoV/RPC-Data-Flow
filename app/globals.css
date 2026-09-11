@@ -286,6 +286,11 @@ body {
   cursor: pointer;
 }
 
+/* A drag never triggers the click (React Flow's nodeClickDistance is 0). */
+.react-flow__node.dragging .process-node {
+  cursor: grabbing;
+}
+
 .process-node.is-clickable:hover {
   border-color: var(--node-accent, var(--kind-document));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);

@@ -6,6 +6,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  useNodesState,
   useReactFlow,
 } from "@xyflow/react";
 import { useRouter } from "next/navigation";
@@ -19,9 +20,12 @@ const nodeTypes = { process: ProcessNode };
 
 // Keep the graph clear of the floating island (top-left) and the Controls /
 // MiniMap chrome along the bottom. maxZoom stops tiny two-node diagrams from
-// ballooning to fill the viewport.
+// ballooning to fill the viewport. MIN_ZOOM sits below React Flow's 0.5 default
+// so wide diagrams (the root map) can still fit on one screen.
+const MIN_ZOOM = 0.1;
 const fitViewOptions = {
   padding: { top: "104px", right: "56px", bottom: "72px", left: "56px" },
+  minZoom: MIN_ZOOM,
   maxZoom: 1.1,
 };
 
@@ -45,6 +49,21 @@ function Canvas({ nodes, edges, dir }) {
   const navigating = useRef(false);
 
   const laid = useMemo(() => layout(nodes, edges, dir), [nodes, edges, dir]);
+
+  // Nodes are draggable, so their positions live in state. Dagre's layout is
+  // only the starting point; a new diagram resets it. Positions aren't saved —
+  // a reload goes back to the computed layout.
+  //
+  // The reset happens during render and only when the layout actually changes.
+  // Resetting in an effect on mount would swap in node objects without React
+  // Flow's `measured` sizes, leaving it un-initialised so fitView (and with it
+  // the click-to-navigate zoom) never resolves.
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(laid.nodes);
+  const [prevLaid, setPrevLaid] = useState(laid);
+  if (laid !== prevLaid) {
+    setPrevLaid(laid);
+    setFlowNodes(laid.nodes);
+  }
 
   // Hovering a node isolates its flow: everything unrelated recedes. With a
   // dozen lines converging on one view this, not colour alone, is what makes an
@@ -147,16 +166,18 @@ function Canvas({ nodes, edges, dir }) {
     <div className={`absolute inset-0${hovered ? " rf-focus" : ""}`}>
       {focusCss && <style>{focusCss}</style>}
       <ReactFlow
-        nodes={laid.nodes}
+        nodes={flowNodes}
         edges={laid.edges}
         nodeTypes={nodeTypes}
         colorMode={theme}
+        onNodesChange={onNodesChange}
         onNodeClick={onNodeClick}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeMouseLeave={onNodeMouseLeave}
-        nodesDraggable={false}
+        nodesDraggable
         nodesConnectable={false}
         edgesFocusable={false}
+        minZoom={MIN_ZOOM}
         fitView
         fitViewOptions={fitViewOptions}
       >

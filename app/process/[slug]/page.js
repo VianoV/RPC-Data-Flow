@@ -23,11 +23,13 @@ export default async function ProcessPage({ params }) {
 
   if (!diagram || slug === "root") notFound();
 
+  const parentKey = diagram.parent ?? "root";
+
   return (
     <DiagramPage
       diagram={diagram}
-      back2Href="/"
-      backLabel={diagrams.root.title}
+      backHref={parentKey === "root" ? "/" : `/process/${parentKey}`}
+      backLabel={diagrams[parentKey].title}
     />
   );
 }
