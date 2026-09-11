@@ -10,7 +10,13 @@ export default function ProcessNode({ data }) {
     <div
       className={`process-node${clickable ? " is-clickable" : ""}`}
       data-kind={data.kind ?? "default"}
-      style={{ width: data.width, height: data.height }}
+      style={{
+        width: data.width,
+        height: data.height,
+        // A node that starts a flow wears that flow's colour, so the line
+        // leaving it and the node itself read as one thing.
+        ...(data.flow ? { "--node-accent": `var(--flow-${data.flow})` } : null),
+      }}
       title={clickable ? "Click to drill in" : undefined}
     >
       <Handle type="target" position={data.targetPosition} />

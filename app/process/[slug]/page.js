@@ -26,7 +26,7 @@ export default async function ProcessPage({ params }) {
   return (
     <DiagramPage
       diagram={diagram}
-      backHref="/"
+      back2Href="/"
       backLabel={diagrams.root.title}
     />
   );

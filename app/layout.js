@@ -17,16 +17,22 @@ export const metadata = {
     "How data flows end to end into RPC_JobBreakdown — from human input, through SAP Business One records, to the consolidated report.",
 };
 
-export const viewport = {
-  colorScheme: "light dark",
-};
+// Runs synchronously while the browser parses the HTML, so the correct theme is
+// applied before the first paint. Falls back to the OS preference when the
+// viewer has not chosen one.
+const themeScript = `(function(){try{var t=localStorage.getItem("theme");if(!t)t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t)}catch(e){}})()`;
 
 export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
+      data-theme="light"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

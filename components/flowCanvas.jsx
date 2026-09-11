@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { layout } from "@/lib/layout";
 import ProcessNode from "@/components/processNode";
+import { useResolvedTheme } from "@/components/useResolvedTheme";
 
 // Defined once, outside the component: React Flow warns if this object identity
 // changes between renders.
@@ -38,10 +39,55 @@ function prefersReducedMotion() {
 function Canvas({ nodes, edges, dir }) {
   const router = useRouter();
   const { fitView } = useReactFlow();
+  const theme = useResolvedTheme();
   const [leaving, setLeaving] = useState(false);
+  const [hovered, setHovered] = useState(null);
   const navigating = useRef(false);
 
   const laid = useMemo(() => layout(nodes, edges, dir), [nodes, edges, dir]);
+
+  // Hovering a node isolates its flow: everything unrelated recedes. With a
+  // dozen lines converging on one view this, not colour alone, is what makes an
+  // individual path traceable.
+  //
+  // This is done with a generated stylesheet keyed on the data-id attributes
+  // React Flow already renders, rather than by rebuilding the node/edge arrays.
+  // Handing React Flow new node objects resets its measurement pass, which
+  // drops every edge from the DOM until the nodes are re-measured.
+  const focusCss = useMemo(() => {
+    if (!hovered) return null;
+
+    const liveEdges = [];
+    const liveNodes = new Set([hovered]);
+    for (const e of laid.edges) {
+      if (e.source === hovered || e.target === hovered) {
+        liveEdges.push(e.id);
+        liveNodes.add(e.source);
+        liveNodes.add(e.target);
+      }
+    }
+
+    const esc = (v) => (window.CSS?.escape ? CSS.escape(v) : v);
+    const notNodes = [...liveNodes]
+      .map((id) => `:not([data-id="${esc(id)}"])`)
+      .join("");
+    const notEdges = liveEdges
+      .map((id) => `:not([data-id="${esc(id)}"])`)
+      .join("");
+
+    return `
+      .rf-focus .react-flow__node${notNodes} .process-node { opacity: .22 }
+      .rf-focus .react-flow__edge${notEdges} { opacity: .1 }
+      ${liveEdges
+        .map(
+          (id) =>
+            `.rf-focus .react-flow__edge[data-id="${esc(
+              id
+            )}"] .react-flow__edge-path { stroke-width: 3.5 }`
+        )
+        .join("\n")}
+    `;
+  }, [laid, hovered]);
 
   // React Flow keeps its viewport when the container resizes, so a full-screen
   // canvas ends up cropped after a window resize. Refit instead.
@@ -86,23 +132,28 @@ function Canvas({ nodes, edges, dir }) {
     [fitView, router]
   );
 
-  // Warm the target page so the push lands as soon as the animation ends.
   const onNodeMouseEnter = useCallback(
     (_, node) => {
+      setHovered(node.id);
+      // Warm the target page so the push lands as the animation ends.
       if (node.data?.href) router.prefetch(node.data.href);
     },
     [router]
   );
 
+  const onNodeMouseLeave = useCallback(() => setHovered(null), []);
+
   return (
-    <div className="absolute inset-0">
+    <div className={`absolute inset-0${hovered ? " rf-focus" : ""}`}>
+      {focusCss && <style>{focusCss}</style>}
       <ReactFlow
         nodes={laid.nodes}
         edges={laid.edges}
         nodeTypes={nodeTypes}
-        colorMode="system"
+        colorMode={theme}
         onNodeClick={onNodeClick}
         onNodeMouseEnter={onNodeMouseEnter}
+        onNodeMouseLeave={onNodeMouseLeave}
         nodesDraggable={false}
         nodesConnectable={false}
         edgesFocusable={false}

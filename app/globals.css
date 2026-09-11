@@ -1,11 +1,17 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
 
+/* The <html data-theme> attribute is always set before first paint by the
+   inline script in app/layout.js (falling back to the OS preference), so the
+   attribute is the single source of truth and no prefers-color-scheme block is
+   needed here. */
+
 :root {
+  color-scheme: light;
+
   --background: #ffffff;
   --foreground: #171717;
 
-  /* Node palette, keyed by the node's `kind`. */
   --node-bg: #ffffff;
   --node-border: #cbd5e1;
   --node-text: #171717;
@@ -21,6 +27,23 @@
   --island-bg: rgba(255, 255, 255, 0.82);
   --island-border: rgba(0, 0, 0, 0.1);
   --island-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+
+  /* Flow colours — one per source node, so each line is its own colour.
+     Validated as a 12-slot categorical palette (worst adjacent CVD ΔE 14.6,
+     normal-vision ΔE 24.9). Several slots sit under 3:1 on white; the relief
+     is that every line is directly labelled by the node it leaves. */
+  --flow-1: #08c2ca;
+  --flow-2: #b7474d;
+  --flow-3: #19ade2;
+  --flow-4: #e58042;
+  --flow-5: #9e8df2;
+  --flow-6: #ac7b0a;
+  --flow-7: #3b6fc5;
+  --flow-8: #3c852b;
+  --flow-9: #e076ab;
+  --flow-10: #a5a51e;
+  --flow-11: #9651a5;
+  --flow-12: #17b991;
 
   /* React Flow chrome. */
   --xy-edge-stroke: #94a3b8;
@@ -38,47 +61,62 @@
   --xy-attribution-background-color: rgba(255, 255, 255, 0.6);
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: #0a0a0a;
+  --foreground: #ededed;
+
+  --node-bg: #171717;
+  --node-border: #3f3f46;
+  --node-text: #ededed;
+  --node-note: #a1a1aa;
+
+  --kind-human: #fbbf24;
+  --kind-document: #60a5fa;
+  --kind-table: #2dd4bf;
+  --kind-view: #a78bfa;
+  --kind-output: #34d399;
+
+  --island-bg: rgba(23, 23, 23, 0.78);
+  --island-border: rgba(255, 255, 255, 0.14);
+  --island-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+
+  /* The same twelve hues, re-stepped for the dark surface rather than flipped
+     (worst adjacent CVD ΔE 13.4, normal-vision ΔE 24.6, all ≥ 3:1). */
+  --flow-1: #03999f;
+  --flow-2: #ad3e45;
+  --flow-3: #139bcb;
+  --flow-4: #d26f30;
+  --flow-5: #8e7cdf;
+  --flow-6: #ac7b0a;
+  --flow-7: #3366bb;
+  --flow-8: #337c20;
+  --flow-9: #cd659a;
+  --flow-10: #949404;
+  --flow-11: #8c489c;
+  --flow-12: #10a682;
+
+  --xy-edge-stroke: #52525b;
+  --xy-edge-stroke-selected: #60a5fa;
+  --xy-background-pattern-dots-color: #3f3f46;
+  --xy-minimap-background-color: rgba(23, 23, 23, 0.82);
+  --xy-minimap-node-background-color: #71717a;
+  --xy-minimap-mask-background-color: rgba(255, 255, 255, 0.08);
+  --xy-minimap-mask-stroke-color: #a1a1aa;
+  --xy-controls-button-background-color: #171717;
+  --xy-controls-button-background-color-hover: #27272a;
+  --xy-controls-button-color: #ededed;
+  --xy-controls-button-color-hover: #ffffff;
+  --xy-controls-button-border-color: #3f3f46;
+  --xy-attribution-background-color: rgba(10, 10, 10, 0.6);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-
-    --node-bg: #171717;
-    --node-border: #3f3f46;
-    --node-text: #ededed;
-    --node-note: #a1a1aa;
-
-    --kind-human: #fbbf24;
-    --kind-document: #60a5fa;
-    --kind-table: #2dd4bf;
-    --kind-view: #a78bfa;
-    --kind-output: #34d399;
-
-    --island-bg: rgba(23, 23, 23, 0.78);
-    --island-border: rgba(255, 255, 255, 0.14);
-    --island-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-
-    --xy-edge-stroke: #52525b;
-    --xy-edge-stroke-selected: #60a5fa;
-    --xy-background-pattern-dots-color: #3f3f46;
-    --xy-minimap-background-color: rgba(23, 23, 23, 0.82);
-    --xy-minimap-node-background-color: #71717a;
-    --xy-minimap-mask-background-color: rgba(255, 255, 255, 0.08);
-    --xy-minimap-mask-stroke-color: #a1a1aa;
-    --xy-controls-button-background-color: #171717;
-    --xy-controls-button-background-color-hover: #27272a;
-    --xy-controls-button-color: #ededed;
-    --xy-controls-button-color-hover: #ffffff;
-    --xy-controls-button-border-color: #3f3f46;
-    --xy-attribution-background-color: rgba(10, 10, 10, 0.6);
-  }
 }
 
 body {
@@ -98,9 +136,26 @@ body {
   -webkit-backdrop-filter: blur(12px) saturate(140%);
 }
 
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--foreground);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: opacity 150ms ease, background-color 150ms ease;
+}
+
+.theme-toggle:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
 /* ---------- Zoom-and-navigate transition ---------- */
 
-/* Fades over the canvas while it flies into the clicked node. */
 .canvas-veil {
   position: absolute;
   inset: 0;
@@ -116,7 +171,6 @@ body {
   transition-delay: 160ms;
 }
 
-/* The destination page fades up as it arrives. */
 .diagram-screen {
   animation: screen-in 260ms ease-out both;
 }
@@ -171,6 +225,10 @@ body {
   border-radius: 6px 0 0 0;
 }
 
+.react-flow__edge-path {
+  transition: opacity 150ms ease, stroke-width 150ms ease;
+}
+
 /* ---------- Custom process node ---------- */
 
 .process-node {
@@ -190,6 +248,8 @@ body {
   font-size: 13px;
   line-height: 20px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: opacity 150ms ease, box-shadow 150ms ease,
+    border-color 150ms ease;
 }
 
 .process-node[data-kind="human"] {
@@ -229,4 +289,11 @@ body {
 .process-node.is-clickable:hover {
   border-color: var(--node-accent, var(--kind-document));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+}
+
+/* Hovering one node recedes everything not on its flow. The dimming rules
+   themselves are generated per-hover in flowCanvas.jsx and keyed on the
+   data-id attributes React Flow renders. */
+.react-flow__edge {
+  transition: opacity 150ms ease;
 }

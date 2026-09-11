@@ -1,5 +1,6 @@
 import Link from "next/link";
 import FlowCanvas from "@/components/flowCanvas";
+import ThemeToggle from "@/components/themeToggle";
 
 /**
  * Full-bleed canvas with the heading, doc prose and back link floating over it
@@ -15,7 +16,7 @@ export default function DiagramPage({ diagram, backHref, backLabel }) {
         dir={diagram.dir ?? "TB"}
       />
 
-      <div className="pointer-events-none absolute inset-0 z-10 p-4 sm:p-6">
+      <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
         <div className="floating-island pointer-events-auto max-w-sm">
           {backHref && (
             <Link
@@ -35,6 +36,10 @@ export default function DiagramPage({ diagram, backHref, backLabel }) {
               {diagram.doc}
             </p>
           )}
+        </div>
+
+        <div className="floating-island pointer-events-auto shrink-0 !p-1.5">
+          <ThemeToggle />
         </div>
       </div>
     </main>
