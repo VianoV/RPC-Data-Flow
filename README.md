@@ -29,6 +29,10 @@ All content lives in **`data/diagrams.js`** — there is no database and no API.
   by `generateStaticParams` in `app/process/[slug]/page.js`.
 - Node positions are **computed**, never hand-placed: `lib/layout.js` runs dagre and
   sizes each node from its label.
+- Clicking the `RPC_JobBreakdown (VIEW)` node opens `/process/job-breakdown`: the view's
+  12 UNION ALL blocks, grouped by `AREA`. Each block opens a page showing its tables,
+  joins (edge label = join type · key), `WHERE` filter and output rules. They're built
+  by `block()` in `data/diagrams.js` from `RPC_JobBreakdown_detailed.md`.
 
 | File | Role |
 | --- | --- |

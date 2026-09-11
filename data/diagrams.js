@@ -20,6 +20,7 @@
 //     dir?:  "TB" | "LR",     // dagre layout direction, default "TB".
 //                             // Use "LR" for long left-to-right process flows.
 //     parent?: string,        // diagram key the back link returns to, default "root"
+//                             // (job-breakdown block pages are built by block())
 //     related?: [{ href: string, label: string }],
 //                             // text links under the doc prose (not nodes/edges)
 //     nodes: [{
@@ -45,6 +46,282 @@
 // Rename the two legacy job-history tables once you confirm the real
 // object names — the SVG labelled both "PT_RPC_JobHistoryIDR".
 
+// ---------- RPC_JobBreakdown BLOCK PAGES ----------
+// The view is a UNION ALL of 12 SELECT blocks (see RPC_JobBreakdown_detailed.md).
+// Each block page shows the tables it joins (edge label = join type + key), its
+// WHERE filter, and the rows it contributes. Blocks 1–4 and 6 share one join
+// shape (documentBlock), as do legacy blocks 8–10 (legacyJobBlock).
+
+/**
+ * One block page: its tables and joins, then
+ *   <rowsFrom table> → WHERE (when there is a filter) → "Block n rows".
+ */
+function block({ n, title, doc, area, type, tables, joins, rowsFrom, filter, output }) {
+  const out = {
+    id: "out",
+    kind: "output",
+    label: `Block ${n} rows`,
+    note: [`AREA '${area}' · Type '${type}'`, output].filter(Boolean).join("\n"),
+  };
+  const tail = filter
+    ? {
+        nodes: [{ id: "where", label: "WHERE", note: filter }, out],
+        edges: [
+          { source: rowsFrom, target: "where" },
+          { source: "where", target: "out" },
+        ],
+      }
+    : { nodes: [out], edges: [{ source: rowsFrom, target: "out" }] };
+
+  return {
+    title: `Block ${n} — ${title}`,
+    doc,
+    parent: "job-breakdown",
+    dir: "LR",
+    nodes: [
+      ...tables.map(([id, label, note]) => ({ id, kind: "table", label, note })),
+      ...tail.nodes,
+    ],
+    edges: [
+      ...joins.map(([source, target, label]) => ({ source, target, label })),
+      ...tail.edges,
+    ],
+  };
+}
+
+// Header + line document with item, item-group, project and section lookups.
+function documentBlock({ header, line, ...rest }) {
+  return block({
+    ...rest,
+    rowsFrom: "t1",
+    tables: [
+      ["t0", `T0 · ${header}\n[HEADER]`],
+      ["t1", `T1 · ${line}\n[LINE]`],
+      ["t2", "T2 · OITM\n[ITEM]"],
+      ["t3", "T3 · OITB\n[GROUP VIA ITEM]"],
+      ["t4", "T4 · OITB\n[GROUP VIA COST CODE]"],
+      ["t5", "T5 · OPRJ\n[PROJECT]"],
+      ["t6", "T6 · @SECTION\n[SECTION]"],
+    ],
+    joins: [
+      ["t0", "t1", "INNER · DocEntry"],
+      ["t1", "t2", "LEFT · ItemCode"],
+      ["t2", "t3", "LEFT · ItmsGrpCod"],
+      ["t1", "t4", "LEFT · U_CostCode"],
+      ["t1", "t5", "LEFT · project"],
+      ["t1", "t6", "LEFT · project + U_Section"],
+    ],
+  });
+}
+
+// Flat legacy job-cost table in RPC_INA: lookups only, no header/line.
+function legacyJobBlock({ projectJoin = "LEFT · Job Number", ...rest }) {
+  return block({
+    ...rest,
+    rowsFrom: "t0",
+    tables: [
+      ["t0", "T0 · PT_RPCJobHistoryIDR\n[FLAT · RPC_INA]"],
+      ["t4", "T4 · OITB\n[GROUP VIA COST CENTRE]"],
+      ["t5", "T5 · OPRJ\n[PROJECT]", "matched on U_BC_PC, then PrjCode"],
+      ["t6", "T6 · @SECTION\n[SECTION]"],
+    ],
+    joins: [
+      ["t0", "t4", "LEFT · Cost Centre"],
+      ["t0", "t5", projectJoin],
+      ["t0", "t6", "LEFT · project + Section"],
+    ],
+  });
+}
+
+const jobBreakdownBlocks = {
+  "jb-ar-invoices": documentBlock({
+    n: 1, title: "A/R Invoices", area: "INVOICES", type: "INV",
+    doc: "Sales invoices: revenue billed to customers. Sets the 29-column pattern every other block mirrors. Lines are INNER-joined; every lookup is LEFT, so a missing item, group, project or section never drops the invoice.",
+    header: "OINV", line: "INV1",
+    filter: "T0.CANCELED = 'N'",
+    output: "LineTotal net of DiscPrcnt\nCOGS = 0",
+  }),
+
+  "jb-deliveries": documentBlock({
+    n: 2, title: "Deliveries", area: "JOB COSTS", type: "DLN",
+    doc: "Delivery notes: goods shipped against a job. Columns are identical to block 1, read from ODLN/DLN1. No filter — every delivery is included.",
+    header: "ODLN", line: "DLN1",
+    output: "Columns as block 1",
+  }),
+
+  "jb-ar-credit-notes": documentBlock({
+    n: 3, title: "A/R Credit Notes", area: "INVOICES", type: "CRE",
+    doc: "Customer credit notes. Same as block 1 (ORIN/RIN1), but DocTotal, LineTotal, ForeignAmt and SysAmt are negated so they subtract from revenue.",
+    header: "ORIN", line: "RIN1",
+    filter: "T0.CANCELED = 'N'",
+    output: "Amounts negated\nCOGS = 0",
+  }),
+
+  "jb-ap-invoices": documentBlock({
+    n: 4, title: "A/P Invoices", area: "JOB COSTS", type: "AP",
+    doc: "Supplier invoices: the discounted line value goes into COGS. Only service lines and non-inventory items are taken — stock purchases are counted in block 12 instead. Known bug: the SummaryType CASE repeats one branch, so one mapping is unreachable.",
+    header: "OPCH", line: "PCH1",
+    filter: "DocType = 'S' OR\n(DocType = 'I' AND InvntItem = 'N')\nAND CANCELED = 'N'",
+    output: "COGS = LineTotal net of DiscPrcnt",
+  }),
+
+  "jb-journal-entries": block({
+    n: 5, title: "Manual Journal Entries", area: "JOB COSTS", type: "AP",
+    doc: "Costs posted by hand to the ledger and tagged to a job. Header and lines join on TransId, not DocEntry. There is no item, so no item/group lookups; the amount is Debit − Credit.",
+    tables: [
+      ["t0", "T0 · OJDT\n[HEADER]"],
+      ["t1", "T1 · JDT1\n[LINE]"],
+      ["t5", "T5 · OPRJ\n[PROJECT]"],
+      ["t6", "T6 · @SECTION\n[SECTION]"],
+    ],
+    joins: [
+      ["t0", "t1", "INNER · TransId"],
+      ["t1", "t5", "LEFT · project"],
+      ["t1", "t6", "LEFT · project + U_Section"],
+    ],
+    rowsFrom: "t1",
+    filter: "TransType = '30'\nDebit or Credit ≠ 0\nProject and U_CostCode filled",
+    output: "DocTotal = COGS = Debit − Credit\nSummaryType from U_CostType",
+  }),
+
+  "jb-ap-credit-notes": documentBlock({
+    n: 6, title: "A/P Credit Notes", area: "JOB COSTS", type: "AP",
+    doc: "Supplier refunds: block 4 with the cost negated. BaseType <> 204 skips credits drawn from that source document, to avoid double counting.",
+    header: "ORPC", line: "RPC1",
+    filter: "Service / non-stock (as block 4)\nAND T1.BaseType <> 204\nAND CANCELED = 'N'",
+    output: "COGS negated",
+  }),
+
+  "jb-production-labour": block({
+    n: 7, title: "Production-Order Labour", area: "JOB COSTS", type: "LAB",
+    doc: "Internal cost of workers' time on production orders, computed from rates on the labour item rather than read from a document total. Warning: @SECTION is INNER-joined, so labour whose project has no matching section is silently dropped.",
+    tables: [
+      ["t0", "T0 · OWOR\n[HEADER]"],
+      ["t1", "T1 · WOR1\n[LINE]"],
+      ["t2", "T2 · OITM\n[LABOUR RATES]"],
+      ["t3", "T3 · OITB\n[GROUP]"],
+      ["t5", "T5 · OPRJ\n[PROJECT]"],
+      ["t9", "T9 · @SECTION\n[SECTION]", "INNER: no section → row dropped"],
+    ],
+    joins: [
+      ["t0", "t1", "INNER · DocEntry"],
+      ["t1", "t2", "INNER · ItemCode LIKE 'LAB%'"],
+      ["t2", "t3", "INNER · ItmsGrpCod"],
+      ["t1", "t5", "LEFT · project"],
+      ["t1", "t9", "INNER · project + U_Section"],
+    ],
+    rowsFrom: "t1",
+    filter: "T2.ItemType = 'L'",
+    output: "COGS = IssuedQty × U_Direct\nOverHeadCost = IssuedQty ×\nU_OverHead",
+  }),
+
+  "jb-legacy-purchases": legacyJobBlock({
+    n: 8, title: "Legacy Purchases", area: "JOB COSTS", type: "AP",
+    doc: "Purchase costs imported from the legacy system: one flat table in the RPC_INA database. The legacy [Job Number] is matched to OPRJ via the Business-Craft cross-reference U_BC_PC first, then PrjCode. The reference lists no WHERE filter for this block.",
+    output: "COGS = Cost\nSummaryType 'Purchased'",
+  }),
+
+  "jb-legacy-labour": legacyJobBlock({
+    n: 9, title: "Legacy Labour", area: "JOB COSTS", type: "LAB",
+    doc: "Labour costs from the same flat legacy table as block 8, with labour constants (cost code 100) and the two overhead columns read from the table.",
+    filter: "[Cost Type] = 'LABOUR'",
+    output: "OverHeadCost =\n[Sum Oncosts Overhead]\nDepartmentalCost =\n[Departmental Overhead]",
+  }),
+
+  "jb-legacy-materials": legacyJobBlock({
+    n: 10, title: "Legacy Materials", area: "JOB COSTS", type: "AP",
+    doc: "Material/stock costs from the flat legacy table, categorised as Stock. Unlike blocks 8 and 9, the OPRJ join trims whitespace from the job number.",
+    projectJoin: "LEFT · TRIM(Job Number)",
+    filter: "[Cost Type] = 'MATERIALS'",
+    output: "DocNum / PO = [Reference No]\nSummaryType 'Stock'",
+  }),
+
+  "jb-legacy-invoices": block({
+    n: 11, title: "Legacy Invoices", area: "INVOICES", type: "INV",
+    doc: "Old sales invoices from a second flat legacy table, already in IDR. Income, so COGS stays 0. No @SECTION lookup and no header/line join.",
+    tables: [
+      ["t0", "T0 · PT_RPC_InvoicedHistory\n[FLAT]"],
+      ["t1", "T1 · OCRD\n[CUSTOMER]"],
+      ["t5", "T5 · OPRJ\n[PROJECT]", "matched on U_BC_PC, then PrjCode"],
+    ],
+    joins: [
+      ["t0", "t1", "LEFT · CardCode"],
+      ["t0", "t5", "LEFT · JobNumber"],
+    ],
+    rowsFrom: "t0",
+    output: "Amount = AmountIDR\nCOGS = 0",
+  }),
+
+  "jb-production-stock": block({
+    n: 12, title: "Production-Order Stock Issues", area: "JOB COSTS", type: "DLN",
+    doc: "True cost of materials consumed on production orders, read from SAP's inventory movement ledger (OINM). Here T1 is OINM and the order line is T11. Warning: @SECTION is INNER-joined, so stock whose project has no matching section is silently dropped.",
+    tables: [
+      ["t0", "T0 · OWOR\n[HEADER]"],
+      ["t1", "T1 · OINM\n[INVENTORY MOVEMENTS]"],
+      ["t11", "T11 · WOR1\n[LINE]"],
+      ["t2", "T2 · OITM\n[ITEM]"],
+      ["t3", "T3 · OITB\n[GROUP]"],
+      ["t5", "T5 · OPRJ\n[PROJECT]"],
+      ["t9", "T9 · @SECTION\n[SECTION]", "INNER: no section → row dropped"],
+    ],
+    joins: [
+      ["t0", "t1", "INNER · AppObjAbs = DocEntry"],
+      ["t1", "t11", "INNER · DocEntry + AppObjLine"],
+      ["t1", "t2", "INNER · ItemCode"],
+      ["t2", "t3", "LEFT · ItmsGrpCod"],
+      ["t11", "t5", "LEFT · project"],
+      ["t11", "t9", "INNER · project + U_Section"],
+    ],
+    rowsFrom: "t1",
+    output: "COGS = ±OpenValue\nQuantity = OutQty − InQty",
+  }),
+};
+
+// The breakdown overview: every block, grouped by the AREA it writes, into the
+// view. Blocks are declared by AREA so dagre keeps each group together. The
+// Type code sits in the note, not on the edge — a dozen edge labels pile up
+// where the lines converge.
+const BLOCK_OVERVIEW = [
+  // [slug, label, source tables, what's special, area, type]
+  ["jb-ar-invoices",       "1 · A/R Invoices",           "OINV + INV1",            "",                "INVOICES",  "INV"],
+  ["jb-ar-credit-notes",   "3 · A/R Credit Notes",       "ORIN + RIN1",            "negated",         "INVOICES",  "CRE"],
+  ["jb-legacy-invoices",   "11 · Legacy Invoices",       "PT_RPC_InvoicedHistory", "",                "INVOICES",  "INV"],
+  ["jb-deliveries",        "2 · Deliveries",             "ODLN + DLN1",            "",                "JOB COSTS", "DLN"],
+  ["jb-ap-invoices",       "4 · A/P Invoices",           "OPCH + PCH1",            "non-stock",       "JOB COSTS", "AP"],
+  ["jb-journal-entries",   "5 · Manual Journal Entries", "OJDT + JDT1",            "Debit − Credit",  "JOB COSTS", "AP"],
+  ["jb-ap-credit-notes",   "6 · A/P Credit Notes",       "ORPC + RPC1",            "negated",         "JOB COSTS", "AP"],
+  ["jb-production-labour", "7 · Production Labour",      "OWOR + WOR1",            "qty × rate",      "JOB COSTS", "LAB"],
+  ["jb-production-stock",  "12 · Production Stock",      "OWOR + OINM",            "OpenValue",       "JOB COSTS", "DLN"],
+  ["jb-legacy-purchases",  "8 · Legacy Purchases",       "PT_RPCJobHistoryIDR",    "",                "JOB COSTS", "AP"],
+  ["jb-legacy-labour",     "9 · Legacy Labour",          "PT_RPCJobHistoryIDR",    "",                "JOB COSTS", "LAB"],
+  ["jb-legacy-materials",  "10 · Legacy Materials",      "PT_RPCJobHistoryIDR",    "",                "JOB COSTS", "AP"],
+];
+
+const AREA_NODE = { INVOICES: "area-invoices", "JOB COSTS": "area-job-costs" };
+
+const jobBreakdownOverview = {
+  title: "RPC_JobBreakdown — 12 Blocks",
+  doc: "A UNION ALL of 12 SELECT blocks, each returning the same 29 columns. Income blocks write AREA 'INVOICES'; cost blocks write 'JOB COSTS'. Click a block for its joins and filter.",
+  dir: "LR",
+  nodes: [
+    ...BLOCK_OVERVIEW.map(([slug, label, tables, special, , type]) => ({
+      id: slug,
+      label,
+      note: `${tables}\nType '${type}'${special ? ` · ${special}` : ""}`,
+      kind: "document",
+      href: `/process/${slug}`,
+    })),
+    { id: "area-invoices",  kind: "view",   label: "AREA 'INVOICES'",  note: "revenue · COGS = 0" },
+    { id: "area-job-costs", kind: "view",   label: "AREA 'JOB COSTS'", note: "cost in COGS" },
+    { id: "view",           kind: "output", label: "RPC_JobBreakdown (VIEW)", note: "UNION ALL · 29 columns" },
+  ],
+  edges: [
+    ...BLOCK_OVERVIEW.map(([slug, , , , area]) => ({ source: slug, target: AREA_NODE[area] })),
+    { source: "area-invoices",  target: "view" },
+    { source: "area-job-costs", target: "view" },
+  ],
+};
+
 export const diagrams = {
   // ---------- TOP-LEVEL DIAGRAM ----------
   root: {
@@ -64,7 +341,7 @@ export const diagrams = {
       { id: "legacy-labour",    label: "Legacy Labour History",  kind: "table",    href: "/process/legacy-labour" },
       { id: "legacy-material",  label: "Legacy Material History",kind: "table",    href: "/process/legacy-material" },
       { id: "legacy-invoice",   label: "Legacy Invoice History", kind: "table",    href: "/process/legacy-invoice" },
-      { id: "job-breakdown",    label: "RPC_JobBreakdown (VIEW)", kind: "view" }, // leaf: no href
+      { id: "job-breakdown",    label: "RPC_JobBreakdown (VIEW)", kind: "view",     href: "/process/job-breakdown" },
 
       // SAP B1 documents upstream/downstream of the feeders above. They show the
       // "Copy To" document flow only — none of them feed RPC_JobBreakdown.
@@ -235,6 +512,10 @@ export const diagrams = {
     nodes: [{ id: "pt-invoice", kind: "table", label: "PT_RPC_InvoicedHistory" }],
     edges: [],
   },
+
+  // ---------- RPC_JobBreakdown DETAIL (built above) ----------
+  "job-breakdown": jobBreakdownOverview,
+  ...jobBreakdownBlocks,
 
   // ---------- SAP B1 DOCUMENT PAGES (not fed into RPC_JobBreakdown) ----------
   "sales-quotation": {
