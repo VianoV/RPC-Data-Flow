@@ -33,6 +33,12 @@ All content lives in **`data/diagrams.js`** — there is no database and no API.
   12 UNION ALL blocks, grouped by `AREA`. Each block opens a page showing its tables,
   joins (edge label = join type · key), `WHERE` filter and output rules. They're built
   by `block()` in `data/diagrams.js` from `RPC_JobBreakdown_detailed.md`.
+- Every block page has a **Joins | Columns** toggle. **Columns** is the column lineage: the
+  source columns the block reads (left) wired to its 29 output columns (right). Lines are
+  coloured by how the value is made (read, calc, fallback/rule, lookup) and dashed when
+  negated; constants have no line. Hover a row to isolate its lines. The view is kept in the
+  URL hash (`#columns`), so it survives reloads and can be linked. The data lives in
+  `data/jobBreakdownColumns.js`.
 
 | File | Role |
 | --- | --- |
@@ -40,6 +46,9 @@ All content lives in **`data/diagrams.js`** — there is no database and no API.
 | `lib/layout.js` | dagre auto-layout, node sizing, handle positions |
 | `components/flowCanvas.jsx` | The React Flow canvas |
 | `components/processNode.jsx` | Custom node: multi-line labels, flow/`kind` colour |
+| `components/columnCardNode.jsx` | Column-lineage card: one row + handle per column |
+| `lib/lineageLayout.js` | Positions lineage cards and wires column → column edges |
+| `data/jobBreakdownColumns.js` | How each block produces its 29 output columns |
 | `components/diagramPage.jsx` | Shared page shell (islands over the canvas) |
 | `components/themeToggle.jsx` | Dark/light button |
 | `components/useResolvedTheme.js` | Subscribes to `<html data-theme>` |
@@ -56,6 +65,7 @@ diagrams[key] = {
   dir?:  "TB" | "LR",     // dagre direction, default "TB"; use "LR" for long flows
   parent?: string,        // diagram key the back link returns to, default "root"
   related?: [{ href: string, label: string }], // text links under the doc prose
+  lineage?: { columns: [{ name, how, expr, from?, negated? }] }, // adds the Columns view
   nodes: [{
     id:    string,        // unique within this diagram
     label: string,        // "\n" renders as a real line break
@@ -76,11 +86,15 @@ Rules:
 - A node's `href` must match another diagram key exactly (`/process/<key>`), or the
   link 404s.
 - `parent` must be an existing diagram key. Set it on drill-downs of a diagram other
-  than `root` (e.g. `inventory-transfers`) so the back link returns there.
-- Only the original feeders connect to `RPC_JobBreakdown`. SAP B1 documents that link to
-  a feeder (Sales Order, Purchase Order, payments…) live in `root` but never add an edge
-  into the view. Documents that link to nothing in `root` get their own diagram,
-  reachable through `related`.
+  than `root` (e.g. the `jb-*` block pages use `job-breakdown`) so the back link returns there.
+- `root` is the actual SAP B1 document flow:
+  - A node connects to `RPC_JobBreakdown` only if the view's SQL reads it
+    (see `RPC_JobBreakdown_detailed.md`), and its `note` names that block.
+  - Automatic journal entries are **not drawn**. Each document that posts one says so
+    in its `doc`, with its TransType (e.g. AR Invoice = 13, Goods Receipt PO = 20).
+    The view ignores them: block 5 only reads manual journals (TransType 30).
+  - Legacy history (blocks 8–11) is not on `root`; it appears only on the
+    `job-breakdown` page.
 - `kind` only sets the accent colour. Omit it for a neutral node.
 - Never write `position` or `width` — `lib/layout.js` computes both.
 

@@ -45,6 +45,16 @@
   --flow-11: #9651a5;
   --flow-12: #17b991;
 
+  /* Column lineage: how an output column is produced. Validated as a 4-slot
+     categorical set, all pairs (worst CVD ΔE 9.2, normal-vision ΔE 16.3). Aqua
+     sits under 3:1 on white; every row also names its `how` in text. */
+  --how-read: #2a78d6;
+  --how-calc: #eb6834;
+  --how-lookup: #1baf7a;
+  --how-fallback: #4a3aa7;
+  --how-typed: #94a3b8;
+  --row-focus: rgba(37, 99, 235, 0.1);
+
   /* React Flow chrome. */
   --xy-edge-stroke: #94a3b8;
   --xy-edge-stroke-selected: #2563eb;
@@ -96,6 +106,15 @@
   --flow-10: #949404;
   --flow-11: #8c489c;
   --flow-12: #10a682;
+
+  /* Re-stepped for the dark surface (all pairs: worst CVD ΔE 8.3, normal ΔE
+     15.1, all ≥ 3:1). */
+  --how-read: #3987e5;
+  --how-calc: #d95926;
+  --how-lookup: #199e70;
+  --how-fallback: #7c4dcc;
+  --how-typed: #71717a;
+  --row-focus: rgba(96, 165, 250, 0.16);
 
   --xy-edge-stroke: #52525b;
   --xy-edge-stroke-selected: #60a5fa;
@@ -301,4 +320,153 @@ body {
    data-id attributes React Flow renders. */
 .react-flow__edge {
   transition: opacity 150ms ease;
+}
+
+/* ---------- Column lineage (block pages, "Columns" view) ---------- */
+
+/* Row and header heights come from inline styles set from lib/lineageLayout.js,
+   so the handles line up with the edges it computes. */
+.column-card {
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--node-border);
+  border-top: 3px solid var(--kind-table);
+  border-radius: 8px;
+  background: var(--node-bg);
+  color: var(--node-text);
+  font-size: 12px;
+  transition: opacity 150ms ease;
+}
+
+.column-card[data-side="output"] {
+  border-top-color: var(--kind-output);
+}
+
+.column-card__header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--node-border);
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.column-card__header span + span {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--node-note);
+}
+
+.column-card__row {
+  position: relative; /* anchors the row's handle */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  white-space: nowrap;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.column-card__row + .column-card__row {
+  border-top: 1px solid color-mix(in srgb, var(--node-border) 45%, transparent);
+}
+
+.column-card__name {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.column-card[data-side="output"] .column-card__name {
+  flex-basis: 118px;
+  font-weight: 500;
+}
+
+/* The `how` tag: text in ink, a swatch in the category colour. */
+.column-card__how {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 72px;
+  color: var(--node-note);
+}
+
+.column-card__how::before,
+.how-legend span::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--how-color);
+}
+
+[data-how="read"] { --how-color: var(--how-read); }
+[data-how="calc"] { --how-color: var(--how-calc); }
+[data-how="fallback"] { --how-color: var(--how-fallback); }
+[data-how="lookup"] { --how-color: var(--how-lookup); }
+[data-how="typed"] { --how-color: var(--how-typed); }
+
+.column-card__expr {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--node-note);
+}
+
+/* Constants have no edge, so their handle dot would point at nothing. */
+.column-card__row[data-how="typed"] .react-flow__handle {
+  visibility: hidden;
+}
+
+.column-card .react-flow__handle {
+  width: 6px;
+  height: 6px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.view-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--island-border);
+  border-radius: 8px;
+}
+
+.view-toggle button {
+  padding: 3px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.view-toggle button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  font-weight: 600;
+  opacity: 1;
+}
+
+.how-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.how-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Negated = dashed line, drawn as a short dashed swatch. */
+.how-legend span[data-how="negated"]::before {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed var(--foreground);
+  background: none;
 }

@@ -11,12 +11,14 @@ import {
 } from "@xyflow/react";
 import { useRouter } from "next/navigation";
 import { layout } from "@/lib/layout";
+import { lineageLayout } from "@/lib/lineageLayout";
 import ProcessNode from "@/components/processNode";
+import ColumnCardNode, { RowHoverContext } from "@/components/columnCardNode";
 import { useResolvedTheme } from "@/components/useResolvedTheme";
 
 // Defined once, outside the component: React Flow warns if this object identity
 // changes between renders.
-const nodeTypes = { process: ProcessNode };
+const nodeTypes = { process: ProcessNode, columns: ColumnCardNode };
 
 // Keep the graph clear of the floating island (top-left) and the Controls /
 // MiniMap chrome along the bottom. maxZoom stops tiny two-node diagrams from
@@ -40,15 +42,22 @@ function prefersReducedMotion() {
   );
 }
 
-function Canvas({ nodes, edges, dir }) {
+function Canvas({ nodes, edges, dir, lineage }) {
   const router = useRouter();
   const { fitView } = useReactFlow();
   const theme = useResolvedTheme();
   const [leaving, setLeaving] = useState(false);
   const [hovered, setHovered] = useState(null);
+  // Column-lineage view only: { node, row } under the pointer.
+  const [hoveredRow, setHoveredRow] = useState(null);
   const navigating = useRef(false);
 
-  const laid = useMemo(() => layout(nodes, edges, dir), [nodes, edges, dir]);
+  // With `lineage`, `nodes` are the block's tables and the canvas draws the
+  // column-to-column view instead of the diagram itself.
+  const laid = useMemo(
+    () => (lineage ? lineageLayout(nodes, lineage) : layout(nodes, edges, dir)),
+    [nodes, edges, dir, lineage]
+  );
 
   // Nodes are draggable, so their positions live in state. Dagre's layout is
   // only the starting point; a new diagram resets it. Positions aren't saved —
@@ -73,16 +82,28 @@ function Canvas({ nodes, edges, dir }) {
   // React Flow already renders, rather than by rebuilding the node/edge arrays.
   // Handing React Flow new node objects resets its measurement pass, which
   // drops every edge from the DOM until the nodes are re-measured.
+  //
+  // In the column-lineage view a hovered row narrows this further: only the
+  // edges on that row's handle stay, and the rows at both ends are highlighted.
   const focusCss = useMemo(() => {
-    if (!hovered) return null;
+    if (!hovered && !hoveredRow) return null;
 
     const liveEdges = [];
-    const liveNodes = new Set([hovered]);
+    const liveRows = [];
+    const liveNodes = new Set([hoveredRow?.node ?? hovered]);
+    if (hoveredRow) liveRows.push([hoveredRow.node, hoveredRow.row]);
+
     for (const e of laid.edges) {
-      if (e.source === hovered || e.target === hovered) {
-        liveEdges.push(e.id);
-        liveNodes.add(e.source);
-        liveNodes.add(e.target);
+      const live = hoveredRow
+        ? (e.source === hoveredRow.node && e.sourceHandle === hoveredRow.row) ||
+          (e.target === hoveredRow.node && e.targetHandle === hoveredRow.row)
+        : e.source === hovered || e.target === hovered;
+      if (!live) continue;
+      liveEdges.push(e.id);
+      liveNodes.add(e.source);
+      liveNodes.add(e.target);
+      if (hoveredRow) {
+        liveRows.push([e.source, e.sourceHandle], [e.target, e.targetHandle]);
       }
     }
 
@@ -95,7 +116,7 @@ function Canvas({ nodes, edges, dir }) {
       .join("");
 
     return `
-      .rf-focus .react-flow__node${notNodes} .process-node { opacity: .22 }
+      .rf-focus .react-flow__node${notNodes} :is(.process-node, .column-card) { opacity: .22 }
       .rf-focus .react-flow__edge${notEdges} { opacity: .1 }
       ${liveEdges
         .map(
@@ -105,8 +126,16 @@ function Canvas({ nodes, edges, dir }) {
             )}"] .react-flow__edge-path { stroke-width: 3.5 }`
         )
         .join("\n")}
+      ${liveRows
+        .map(
+          ([node, row]) =>
+            `.rf-focus .react-flow__node[data-id="${esc(node)}"] .column-card__row[data-row="${esc(
+              row
+            )}"] { background: var(--row-focus) }`
+        )
+        .join("\n")}
     `;
-  }, [laid, hovered]);
+  }, [laid, hovered, hoveredRow]);
 
   // React Flow keeps its viewport when the container resizes, so a full-screen
   // canvas ends up cropped after a window resize. Refit instead.
@@ -163,28 +192,30 @@ function Canvas({ nodes, edges, dir }) {
   const onNodeMouseLeave = useCallback(() => setHovered(null), []);
 
   return (
-    <div className={`absolute inset-0${hovered ? " rf-focus" : ""}`}>
+    <div className={`absolute inset-0${focusCss ? " rf-focus" : ""}`}>
       {focusCss && <style>{focusCss}</style>}
-      <ReactFlow
-        nodes={flowNodes}
-        edges={laid.edges}
-        nodeTypes={nodeTypes}
-        colorMode={theme}
-        onNodesChange={onNodesChange}
-        onNodeClick={onNodeClick}
-        onNodeMouseEnter={onNodeMouseEnter}
-        onNodeMouseLeave={onNodeMouseLeave}
-        nodesDraggable
-        nodesConnectable={false}
-        edgesFocusable={false}
-        minZoom={MIN_ZOOM}
-        fitView
-        fitViewOptions={fitViewOptions}
-      >
-        <Background />
-        <Controls showInteractive={false} />
-        <MiniMap pannable zoomable />
-      </ReactFlow>
+      <RowHoverContext.Provider value={setHoveredRow}>
+        <ReactFlow
+          nodes={flowNodes}
+          edges={laid.edges}
+          nodeTypes={nodeTypes}
+          colorMode={theme}
+          onNodesChange={onNodesChange}
+          onNodeClick={onNodeClick}
+          onNodeMouseEnter={onNodeMouseEnter}
+          onNodeMouseLeave={onNodeMouseLeave}
+          nodesDraggable
+          nodesConnectable={false}
+          edgesFocusable={false}
+          minZoom={MIN_ZOOM}
+          fitView
+          fitViewOptions={fitViewOptions}
+        >
+          <Background />
+          <Controls showInteractive={false} />
+          <MiniMap pannable zoomable />
+        </ReactFlow>
+      </RowHoverContext.Provider>
 
       {/* Fades the canvas out as it flies in, so the page swap isn't a hard cut. */}
       <div
