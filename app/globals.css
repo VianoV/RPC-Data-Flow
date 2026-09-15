@@ -470,3 +470,270 @@ body {
   border-top: 2px dashed var(--foreground);
   background: none;
 }
+
+/* ---------- Main page: outside-SAP / inside-SAP bands ---------- */
+
+/* Bands are background nodes; clicks must fall through to the pane (which
+   closes the detail island). */
+.react-flow__node.band-node {
+  pointer-events: none;
+}
+
+.band {
+  position: relative;
+  box-sizing: border-box;
+  border: 1px dashed color-mix(in srgb, var(--band-hue) 40%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--band-hue) 6%, transparent);
+}
+
+.band[data-scope="outside"] { --band-hue: var(--kind-human); }
+.band[data-scope="sap"] { --band-hue: var(--kind-document); }
+
+.band__label {
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--node-note); /* ink, not the band hue: text stays legible */
+}
+
+.band__label::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--band-hue);
+}
+
+.minimap-band {
+  fill: transparent !important;
+  stroke: none !important;
+}
+
+/* ---------- Scope tags on nodes ---------- */
+
+.process-node__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--node-note);
+}
+
+.process-node__tag::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tag-hue, var(--node-note));
+}
+
+/* Outside SAP: dashed sides (the flow-coloured top border stays solid). */
+.process-node.is-outside {
+  --tag-hue: var(--kind-human);
+  border-left-style: dashed;
+  border-right-style: dashed;
+  border-bottom-style: dashed;
+}
+
+/* In the Outside view, the SAP document a step hands off to. */
+.process-node.is-ghost {
+  --tag-hue: var(--kind-document);
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+/* A standard SAP document RPC's process doesn't use. */
+.process-node.is-unused {
+  opacity: 0.55;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--node-border) 40%, transparent) 6px 7px
+    ),
+    var(--node-bg);
+}
+
+/* ---------- Detail island ---------- */
+
+/* The theme toggle, with the detail island under it on wide screens. It must
+   not shrink: squeezed narrower than the toggle, the toggle spills left over
+   the main island. The main island gives up the space instead. (On narrow
+   screens the detail island is fixed, so this is just the toggle's width.) */
+.island-column {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.detail-island {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+.detail-island__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.detail-island__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail-island__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--island-border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.detail-island__badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--badge-hue, var(--node-note));
+}
+
+.detail-island__badge[data-scope="outside"] { --badge-hue: var(--kind-human); }
+.detail-island__badge[data-scope="sap"] { --badge-hue: var(--kind-document); }
+
+.detail-island__close {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.detail-island__close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.detail-island__title {
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  outline: none;
+}
+
+.detail-island__note,
+.detail-island__unused {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--node-note);
+}
+
+.detail-island__unused {
+  font-style: italic;
+}
+
+.detail-island__body {
+  margin-top: 10px;
+  line-height: 1.55;
+  opacity: 0.85;
+}
+
+.detail-island__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.detail-island__sections dt {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--node-note);
+}
+
+.detail-island__sections dd {
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+.detail-island__sections [data-section="risk"] {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kind-human) 10%, transparent);
+}
+
+.island-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--island-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.island-button:hover {
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+/* Let the view switch wrap. When the main island is squeezed — at tablet
+   widths, beside an open detail island — root's three views don't fit on one
+   row, and an unwrappable switch would force the island wider than its space. */
+.view-toggle {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+/* Narrow screens: a bottom sheet, so it doesn't cover the whole canvas. */
+@media (max-width: 639px) {
+  .detail-island {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    z-index: 30;
+    width: auto;
+    max-width: none;
+    max-height: 55dvh;
+    /* Nearly opaque: through glass, the canvas chrome behind the sheet
+       competed with its text. */
+    background: color-mix(in srgb, var(--background) 95%, transparent);
+  }
+
+  /* At phone width the minimap is mostly noise, and it sat behind the sheet. */
+  .react-flow__minimap {
+    display: none;
+  }
+}

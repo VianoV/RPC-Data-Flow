@@ -1,13 +1,18 @@
 "use client";
-import { useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { ReactFlowProvider } from "@xyflow/react";
 import FlowCanvas from "@/components/flowCanvas";
 import ThemeToggle from "@/components/themeToggle";
+import DetailIsland from "@/components/detailIsland";
 import { HOW_LABEL } from "@/components/columnCardNode";
+import { useZoomNavigate } from "@/components/useZoomNavigate";
+import { scopeView } from "@/lib/scopeView";
 
-// The active view of a page with `lineage` lives in the URL hash (#columns), so
-// it survives a reload, can be shared, and the back button undoes a switch —
-// without searchParams, which would stop the page prerendering.
+// The active view lives in the URL hash (#columns, #sap, #outside), so it
+// survives a reload, can be shared, and the back button undoes a switch —
+// without searchParams, which would stop the page prerendering. The first view
+// is the default and has no hash.
 const VIEW_EVENT = "diagram-view-change";
 
 function subscribe(onChange) {
@@ -24,34 +29,88 @@ function subscribe(onChange) {
 const getHash = () => window.location.hash;
 const getServerHash = () => "";
 
-function setView(view) {
+const LINEAGE_VIEWS = [
+  { id: "joins", label: "Joins" },
+  { id: "columns", label: "Columns" },
+];
+
+const viewsOf = (diagram) =>
+  diagram.views ?? (diagram.lineage ? LINEAGE_VIEWS : null);
+
+function setView(views, id) {
   const { pathname, search } = window.location;
   // Native pushState integrates with the Next.js router; it fires no event of
   // its own, so tell subscribers.
-  window.history.pushState(null, "", view === "columns" ? "#columns" : pathname + search);
+  window.history.pushState(
+    null,
+    "",
+    id === views[0].id ? pathname + search : `#${id}`
+  );
   window.dispatchEvent(new Event(VIEW_EVENT));
 }
 
 const LEGEND = ["read", "calc", "fallback", "lookup"];
 
 /**
- * Full-bleed canvas with the heading, doc prose and back link floating over it
- * as an island. The wrapper is pointer-events:none so drags/zooms pass through
- * to the canvas everywhere except on the island itself.
+ * One provider per view: switching views is a fresh React Flow mount (no stale
+ * measurement) and clears the selection. The provider wraps the overlay too, so
+ * the detail island can run the same zoom-and-navigate as the canvas.
  */
-export default function DiagramPage({ diagram, backHref, backLabel }) {
+export default function DiagramPage(props) {
+  const views = viewsOf(props.diagram);
   const hash = useSyncExternalStore(subscribe, getHash, getServerHash);
-  const view = diagram.lineage && hash === "#columns" ? "columns" : "joins";
+  const view = views
+    ? (views.find((v) => `#${v.id}` === hash) ?? views[0]).id
+    : null;
+
+  return (
+    <ReactFlowProvider key={view ?? "default"}>
+      <DiagramScreen {...props} views={views} view={view} />
+    </ReactFlowProvider>
+  );
+}
+
+/**
+ * Full-bleed canvas with the heading, doc prose and back link floating over it
+ * as an island. The overlay is pointer-events:none so drags/zooms pass through
+ * to the canvas everywhere except on the islands themselves.
+ */
+function DiagramScreen({ diagram, backHref, backLabel, views, view }) {
+  const { open, prefetch, leaving, navigating } = useZoomNavigate();
+  const [selected, setSelected] = useState(null);
+
+  const scoped = useMemo(
+    () =>
+      diagram.views
+        ? scopeView(diagram, view)
+        : { nodes: diagram.nodes, edges: diagram.edges, bands: null },
+    [diagram, view]
+  );
+  const selectedNode = selected
+    ? scoped.nodes.find((n) => n.id === selected)
+    : null;
+
+  // Esc closes the island.
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e) => e.key === "Escape" && setSelected(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
 
   return (
     <main className="diagram-screen relative h-dvh w-full overflow-hidden">
-      {/* Keyed by view so switching remounts the canvas and fits the new graph. */}
       <FlowCanvas
-        key={view}
-        nodes={diagram.nodes}
-        edges={diagram.edges}
+        nodes={scoped.nodes}
+        edges={scoped.edges}
+        bands={scoped.bands}
         dir={diagram.dir ?? "TB"}
         lineage={view === "columns" ? diagram.lineage : undefined}
+        selected={selected}
+        onSelect={setSelected}
+        onOpen={open}
+        prefetch={prefetch}
+        navigating={navigating}
       />
 
       <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
@@ -89,20 +148,17 @@ export default function DiagramPage({ diagram, backHref, backLabel }) {
             </div>
           )}
 
-          {diagram.lineage && (
+          {views && (
             <>
               <div className="view-toggle mt-3" role="group" aria-label="View">
-                {[
-                  ["joins", "Joins"],
-                  ["columns", "Columns"],
-                ].map(([value, label]) => (
+                {views.map((v) => (
                   <button
-                    key={value}
+                    key={v.id}
                     type="button"
-                    aria-pressed={view === value}
-                    onClick={() => view !== value && setView(value)}
+                    aria-pressed={view === v.id}
+                    onClick={() => view !== v.id && setView(views, v.id)}
                   >
-                    {label}
+                    {v.label}
                   </button>
                 ))}
               </div>
@@ -122,10 +178,27 @@ export default function DiagramPage({ diagram, backHref, backLabel }) {
           )}
         </div>
 
-        <div className="floating-island pointer-events-auto shrink-0 !p-1.5">
-          <ThemeToggle />
+        <div className="island-column">
+          <div className="floating-island pointer-events-auto shrink-0 !p-1.5">
+            <ThemeToggle />
+          </div>
+
+          {selectedNode && (
+            <DetailIsland
+              key={selectedNode.id}
+              node={selectedNode}
+              onClose={() => setSelected(null)}
+              onOpen={open}
+            />
+          )}
         </div>
       </div>
+
+      {/* Fades the canvas out as it flies in, so the page swap isn't a hard cut. */}
+      <div
+        className={`canvas-veil${leaving ? " is-leaving" : ""}`}
+        aria-hidden="true"
+      />
     </main>
   );
 }

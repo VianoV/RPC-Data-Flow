@@ -1,24 +1,24 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
-  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
-import { useRouter } from "next/navigation";
 import { layout } from "@/lib/layout";
 import { lineageLayout } from "@/lib/lineageLayout";
 import ProcessNode from "@/components/processNode";
+import BandNode from "@/components/bandNode";
 import ColumnCardNode, { RowHoverContext } from "@/components/columnCardNode";
 import { useResolvedTheme } from "@/components/useResolvedTheme";
+import { prefersReducedMotion } from "@/components/useZoomNavigate";
 
 // Defined once, outside the component: React Flow warns if this object identity
 // changes between renders.
-const nodeTypes = { process: ProcessNode, columns: ColumnCardNode };
+const nodeTypes = { process: ProcessNode, columns: ColumnCardNode, band: BandNode };
 
 // Keep the graph clear of the floating island (top-left) and the Controls /
 // MiniMap chrome along the bottom. maxZoom stops tiny two-node diagrams from
@@ -31,32 +31,47 @@ const fitViewOptions = {
   maxZoom: 1.1,
 };
 
-// Zoom-into-the-node transition before navigating.
-const ZOOM_DURATION = 380;
-const ZOOM_TARGET = 2.4;
+// Selecting a node pans it clear of the detail island: the island sits on the
+// right on wide screens and is a bottom sheet on narrow ones (see globals.css).
+const SELECT_ZOOM = 0.8; // zoom in to at least this, so the node is readable
+const ISLAND_SHIFT_X = 200; // screen px
+const SHEET_SHIFT_Y = 0.22; // share of the viewport height
 
-function prefersReducedMotion() {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
+const minimapClass = (node) => (node.type === "band" ? "minimap-band" : "");
 
-function Canvas({ nodes, edges, dir, lineage }) {
-  const router = useRouter();
-  const { fitView } = useReactFlow();
+/**
+ * The React Flow canvas. Renders inside the ReactFlowProvider that DiagramPage
+ * sets up, so the detail island can drive the same viewport.
+ *
+ * Clicking a node with `detail` selects it (DiagramPage shows the island);
+ * a node with only `href` flies in and opens its page via `onOpen`.
+ */
+export default function FlowCanvas({
+  nodes,
+  edges,
+  dir = "TB",
+  lineage,
+  bands,
+  selected,
+  onSelect,
+  onOpen,
+  prefetch,
+  navigating,
+}) {
+  const { fitView, getInternalNode, getZoom, setCenter } = useReactFlow();
   const theme = useResolvedTheme();
-  const [leaving, setLeaving] = useState(false);
   const [hovered, setHovered] = useState(null);
   // Column-lineage view only: { node, row } under the pointer.
   const [hoveredRow, setHoveredRow] = useState(null);
-  const navigating = useRef(false);
 
   // With `lineage`, `nodes` are the block's tables and the canvas draws the
   // column-to-column view instead of the diagram itself.
   const laid = useMemo(
-    () => (lineage ? lineageLayout(nodes, lineage) : layout(nodes, edges, dir)),
-    [nodes, edges, dir, lineage]
+    () =>
+      lineage
+        ? lineageLayout(nodes, lineage)
+        : layout(nodes, edges, dir, { bands }),
+    [nodes, edges, dir, lineage, bands]
   );
 
   // Nodes are draggable, so their positions live in state. Dagre's layout is
@@ -76,7 +91,8 @@ function Canvas({ nodes, edges, dir, lineage }) {
 
   // Hovering a node isolates its flow: everything unrelated recedes. With a
   // dozen lines converging on one view this, not colour alone, is what makes an
-  // individual path traceable.
+  // individual path traceable. The selected node keeps its flow isolated while
+  // the pointer is elsewhere.
   //
   // This is done with a generated stylesheet keyed on the data-id attributes
   // React Flow already renders, rather than by rebuilding the node/edge arrays.
@@ -85,19 +101,20 @@ function Canvas({ nodes, edges, dir, lineage }) {
   //
   // In the column-lineage view a hovered row narrows this further: only the
   // edges on that row's handle stay, and the rows at both ends are highlighted.
+  const focus = hovered ?? selected;
   const focusCss = useMemo(() => {
-    if (!hovered && !hoveredRow) return null;
+    if (!focus && !hoveredRow) return null;
 
     const liveEdges = [];
     const liveRows = [];
-    const liveNodes = new Set([hoveredRow?.node ?? hovered]);
+    const liveNodes = new Set([hoveredRow?.node ?? focus]);
     if (hoveredRow) liveRows.push([hoveredRow.node, hoveredRow.row]);
 
     for (const e of laid.edges) {
       const live = hoveredRow
         ? (e.source === hoveredRow.node && e.sourceHandle === hoveredRow.row) ||
           (e.target === hoveredRow.node && e.targetHandle === hoveredRow.row)
-        : e.source === hovered || e.target === hovered;
+        : e.source === focus || e.target === focus;
       if (!live) continue;
       liveEdges.push(e.id);
       liveNodes.add(e.source);
@@ -134,15 +151,22 @@ function Canvas({ nodes, edges, dir, lineage }) {
             )}"] { background: var(--row-focus) }`
         )
         .join("\n")}
+      ${
+        selected
+          ? `.rf-focus .react-flow__node[data-id="${esc(
+              selected
+            )}"] .process-node { box-shadow: 0 0 0 2px var(--node-accent, var(--kind-document)), 0 4px 14px rgba(0,0,0,.18) }`
+          : ""
+      }
     `;
-  }, [laid, hovered, hoveredRow]);
+  }, [laid, focus, hoveredRow, selected]);
 
   // React Flow keeps its viewport when the container resizes, so a full-screen
   // canvas ends up cropped after a window resize. Refit instead.
   useEffect(() => {
     let frame = 0;
     const refit = () => {
-      if (navigating.current) return;
+      if (navigating?.current) return;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => fitView(fitViewOptions));
     };
@@ -151,45 +175,51 @@ function Canvas({ nodes, edges, dir, lineage }) {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", refit);
     };
-  }, [fitView]);
+  }, [fitView, navigating]);
+
+  const panToNode = useCallback(
+    (id) => {
+      const node = getInternalNode(id);
+      if (!node) return;
+      const { x, y } = node.internals.positionAbsolute;
+      const cx = x + (node.measured.width ?? 0) / 2;
+      const cy = y + (node.measured.height ?? 0) / 2;
+      const zoom = Math.max(getZoom(), SELECT_ZOOM);
+      const narrow = window.matchMedia("(max-width: 639px)").matches;
+
+      setCenter(
+        narrow ? cx : cx + ISLAND_SHIFT_X / zoom,
+        narrow ? cy + (window.innerHeight * SHEET_SHIFT_Y) / zoom : cy,
+        { zoom, duration: prefersReducedMotion() ? 0 : 350 }
+      );
+    },
+    [getInternalNode, getZoom, setCenter]
+  );
 
   const onNodeClick = useCallback(
-    async (_, node) => {
-      const href = node.data?.href;
-      if (!href || navigating.current) return;
-
-      navigating.current = true;
-      setLeaving(true);
-
-      if (prefersReducedMotion()) {
-        router.push(href);
+    (_, node) => {
+      if (node.type === "band" || navigating?.current) return;
+      if (node.data?.detail) {
+        onSelect?.(node.id);
+        panToNode(node.id);
         return;
       }
-
-      // Fly into the clicked node, then hand over to the next page.
-      await fitView({
-        nodes: [{ id: node.id }],
-        duration: ZOOM_DURATION,
-        minZoom: ZOOM_TARGET,
-        maxZoom: ZOOM_TARGET,
-        padding: 0.6,
-      });
-
-      router.push(href);
+      if (node.data?.href) onOpen?.(node.id, node.data.href);
     },
-    [fitView, router]
+    [navigating, onSelect, onOpen, panToNode]
   );
 
   const onNodeMouseEnter = useCallback(
     (_, node) => {
+      if (node.type === "band") return;
       setHovered(node.id);
-      // Warm the target page so the push lands as the animation ends.
-      if (node.data?.href) router.prefetch(node.data.href);
+      prefetch?.(node.data?.href);
     },
-    [router]
+    [prefetch]
   );
 
   const onNodeMouseLeave = useCallback(() => setHovered(null), []);
+  const onPaneClick = useCallback(() => onSelect?.(null), [onSelect]);
 
   return (
     <div className={`absolute inset-0${focusCss ? " rf-focus" : ""}`}>
@@ -204,6 +234,7 @@ function Canvas({ nodes, edges, dir, lineage }) {
           onNodeClick={onNodeClick}
           onNodeMouseEnter={onNodeMouseEnter}
           onNodeMouseLeave={onNodeMouseLeave}
+          onPaneClick={onPaneClick}
           nodesDraggable
           nodesConnectable={false}
           edgesFocusable={false}
@@ -213,23 +244,9 @@ function Canvas({ nodes, edges, dir, lineage }) {
         >
           <Background />
           <Controls showInteractive={false} />
-          <MiniMap pannable zoomable />
+          <MiniMap pannable zoomable nodeClassName={minimapClass} />
         </ReactFlow>
       </RowHoverContext.Provider>
-
-      {/* Fades the canvas out as it flies in, so the page swap isn't a hard cut. */}
-      <div
-        className={`canvas-veil${leaving ? " is-leaving" : ""}`}
-        aria-hidden="true"
-      />
     </div>
-  );
-}
-
-export default function FlowCanvas(props) {
-  return (
-    <ReactFlowProvider>
-      <Canvas {...props} dir={props.dir ?? "TB"} />
-    </ReactFlowProvider>
   );
 }

@@ -4,11 +4,21 @@ import { Handle } from "@xyflow/react";
 export default function ProcessNode({ data }) {
   const lines = String(data.label ?? "").split("\n");
   const noteLines = data.note ? String(data.note).split("\n") : [];
-  const clickable = Boolean(data.href);
+  const clickable = Boolean(data.detail || data.href);
+
+  const className = [
+    "process-node",
+    clickable && "is-clickable",
+    data.scope === "outside" && "is-outside",
+    data.ghost && "is-ghost",
+    data.unused && "is-unused",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
-      className={`process-node${clickable ? " is-clickable" : ""}`}
+      className={className}
       data-kind={data.kind ?? "default"}
       style={{
         width: data.width,
@@ -17,9 +27,13 @@ export default function ProcessNode({ data }) {
         // leaving it and the node itself read as one thing.
         ...(data.flow ? { "--node-accent": `var(--flow-${data.flow})` } : null),
       }}
-      title={clickable ? "Click to drill in" : undefined}
+      title={
+        data.detail ? "Click for details" : data.href ? "Click to drill in" : undefined
+      }
     >
       <Handle type="target" position={data.targetPosition} />
+
+      {data.tag && <span className="process-node__tag">{data.tag}</span>}
 
       <div className="process-node__label">
         {lines.map((line, i) => (

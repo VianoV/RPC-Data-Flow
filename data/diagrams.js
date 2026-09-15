@@ -26,13 +26,19 @@
 //     lineage?: { columns },  // adds a "Columns" view: which source column feeds
 //                             // each output column (data/jobBreakdownColumns.js).
 //                             // `from` refs use this diagram's table node ids.
+//     views?: [{ id, label }], // a view switch; views[0] is the default. `root`
+//                             // uses all / sap / outside (see lib/scopeView.js).
 //     nodes: [{
 //       id:    string,        // unique WITHIN this diagram
 //       label: string,        // "\n" renders as a real line break
 //       kind?: "human" | "document" | "table" | "view" | "output",
 //                             // drives the node's accent colour; omit for neutral
-//       href?: string,        // makes the node clickable, e.g. "/process/<key>"
+//       href?: string,        // opens "/process/<key>"; with `detail`, via the island
 //       note?: string,        // optional smaller detail line under the label
+//       scope?: "sap" | "outside", // "outside" = a step done outside SAP B1
+//       unused?: string,      // SAP document RPC's process doesn't use, and why
+//       detail?: { body, who, where, sap, view, risk },
+//                             // floating island shown when the node is clicked
 //     }],
 //     edges: [{
 //       source: string,       // node id
@@ -50,6 +56,7 @@
 // PT_RPCJobHistoryIDR feeds blocks 8–10, PT_RPC_InvoicedHistory block 11.
 
 import { blockColumns } from "./jobBreakdownColumns.js";
+import { consolidateRoot } from "./rpcProcess.js";
 
 // ---------- RPC_JobBreakdown BLOCK PAGES ----------
 // The view is a UNION ALL of 12 SELECT blocks (see RPC_JobBreakdown_detailed.md).
@@ -347,31 +354,24 @@ export const diagrams = {
     // instead (the view ignores them — block 5 takes TransType 30 only). Legacy
     // history (blocks 8–11) is shown only on the job-breakdown page.
     nodes: [
+      // Only documents RPC uses. The one exception is Delivery: RPC doesn't
+      // create them, but block 2 reads ODLN, so it stays (marked unused in
+      // data/rpcProcess.js).
+
       // Sales
-      { id: "sales-quotation",    label: "Sales Quotation",    kind: "document", href: "/process/sales-quotation" },
       { id: "sales-order",        label: "Sales Order",        kind: "document", href: "/process/sales-order" },
       { id: "delivery",           label: "Delivery",           kind: "document", href: "/process/delivery",       note: "Block 2 · DLN" },
-      { id: "returns",            label: "Returns",            kind: "document", href: "/process/returns" },
       { id: "ar-invoice",         label: "AR Invoice",         kind: "document", href: "/process/ar-invoice",     note: "Block 1 · INV" },
       { id: "ar-credit-note",     label: "AR Credit Note",     kind: "document", href: "/process/ar-credit-note", note: "Block 3 · CRE (negated)" },
       { id: "incoming-payment",   label: "Incoming Payment",   kind: "document", href: "/process/incoming-payment" },
 
       // Purchasing
-      { id: "purchase-request",   label: "Purchase Request",   kind: "document", href: "/process/purchase-request" },
-      { id: "purchase-quotation", label: "Purchase Quotation", kind: "document", href: "/process/purchase-quotation" },
       { id: "purchase-order",     label: "Purchase Order",     kind: "document", href: "/process/purchase-order" },
-      { id: "goods-receipt-po",   label: "Goods Receipt PO",   kind: "document", href: "/process/goods-receipt-po" },
-      { id: "goods-return",       label: "Goods Return",       kind: "document", href: "/process/goods-return" },
       { id: "ap-invoice",         label: "AP Invoice",         kind: "document", href: "/process/ap-invoice",     note: "Block 4 · AP (non-stock)" },
       { id: "ap-credit-note",     label: "AP Credit Note",     kind: "document", href: "/process/ap-credit-note", note: "Block 6 · AP (negated)" },
       { id: "outgoing-payment",   label: "Outgoing Payment",   kind: "document", href: "/process/outgoing-payment" },
 
-      // Inventory
-      { id: "inventory-transfer-request", label: "Inventory Transfer Request", kind: "document", href: "/process/inventory-transfer-request" },
-      { id: "inventory-transfer",         label: "Inventory Transfer",         kind: "document", href: "/process/inventory-transfer" },
-
       // Production
-      { id: "bill-of-materials",  label: "Bill of Materials",  kind: "document", href: "/process/bill-of-materials" },
       { id: "production-order",   label: "Production Order",   kind: "document", href: "/process/production-order", note: "Block 7 · LAB (labour)" },
       { id: "goods-issue",        label: "Goods Issue",        kind: "document", href: "/process/goods-issue" },
       { id: "goods-receipt",      label: "Goods Receipt",      kind: "document", href: "/process/goods-receipt" },
@@ -388,25 +388,17 @@ export const diagrams = {
       { id: "job-breakdown",      label: "RPC_JobBreakdown (VIEW)", kind: "view", href: "/process/job-breakdown", note: "12 blocks · 29 columns" },
     ],
     edges: [
-      // Sales: quotation → order → delivery → invoice → credit
-      { source: "sales-quotation",    target: "sales-order" },
+      // Sales: order → (delivery, read by block 2) → invoice → credit
       { source: "sales-order",        target: "delivery" },
       { source: "delivery",           target: "ar-invoice" },
-      { source: "delivery",           target: "returns" },
-      { source: "returns",            target: "ar-credit-note" },
       { source: "ar-invoice",         target: "ar-credit-note" },
       { source: "ar-invoice",         target: "incoming-payment" },
       { source: "delivery",           target: "job-breakdown" },
       { source: "ar-invoice",         target: "job-breakdown" },
       { source: "ar-credit-note",     target: "job-breakdown" },
 
-      // Purchasing: request → quotation → order → receipt → invoice → credit
-      { source: "purchase-request",   target: "purchase-quotation" },
-      { source: "purchase-quotation", target: "purchase-order" },
-      { source: "purchase-order",     target: "goods-receipt-po" },
-      { source: "goods-receipt-po",   target: "ap-invoice" },
-      { source: "goods-receipt-po",   target: "goods-return" },
-      { source: "goods-return",       target: "ap-credit-note" },
+      // Purchasing: order → invoice (the supplier's bill closes the PO) → credit
+      { source: "purchase-order",     target: "ap-invoice" },
       { source: "ap-invoice",         target: "ap-credit-note" },
       { source: "ap-invoice",         target: "outgoing-payment" },
       { source: "ap-invoice",         target: "job-breakdown" },
@@ -414,7 +406,6 @@ export const diagrams = {
 
       // Production: labour is read from the order itself; material cost from
       // the inventory movements its issues and receipts write.
-      { source: "bill-of-materials",  target: "production-order" },
       { source: "production-order",   target: "goods-issue",   label: "Issue for Production" },
       { source: "production-order",   target: "goods-receipt", label: "Receipt from Production" },
       { source: "goods-issue",        target: "inventory-movements" },
@@ -427,8 +418,6 @@ export const diagrams = {
       { source: "items",              target: "job-breakdown" },
       { source: "project",            target: "job-breakdown" },
       { source: "business-partners",  target: "job-breakdown" },
-
-      { source: "inventory-transfer-request", target: "inventory-transfer" },
     ],
   },
 
@@ -565,34 +554,14 @@ export const diagrams = {
   ...jobBreakdownBlocks,
 
   // ---------- SAP B1 DOCUMENT PAGES (upstream of the view's sources) ----------
-  "sales-quotation": {
-    title: "Sales Quotation",
-    doc: "Sales Quotation offered to a customer. OQUT header, QUT1 rows — copied to a Sales Order.",
-    nodes: [
-      { id: "oqut", kind: "table", label: "OQUT\n[HEADER]" },
-      { id: "qut1", kind: "table", label: "QUT1\n[ROW]" },
-    ],
-    edges: [{ source: "oqut", target: "qut1" }],
-  },
-
   "sales-order": {
     title: "Sales Order",
-    doc: "Sales Order confirming a customer's order. ORDR header, RDR1 rows. Rows copied from a quotation carry BaseType/BaseEntry/BaseLine; copied onward to a Delivery.",
+    doc: "Sales Order confirming a customer's order. ORDR header, RDR1 rows.",
     nodes: [
       { id: "ordr", kind: "table", label: "ORDR\n[HEADER]" },
       { id: "rdr1", kind: "table", label: "RDR1\n[ROW]" },
     ],
     edges: [{ source: "ordr", target: "rdr1" }],
-  },
-
-  returns: {
-    title: "Returns",
-    doc: "Customer return of delivered goods. ORDN header, RDN1 rows (BaseType/BaseEntry/BaseLine point back at the Delivery) — can be copied to an A/R Credit Memo. Posts an automatic journal entry for stock items (TransType 16), which the view doesn't read.",
-    nodes: [
-      { id: "ordn", kind: "table", label: "ORDN\n[HEADER]" },
-      { id: "rdn1", kind: "table", label: "RDN1\n[ROW]" },
-    ],
-    edges: [{ source: "ordn", target: "rdn1" }],
   },
 
   "incoming-payment": {
@@ -605,54 +574,14 @@ export const diagrams = {
     edges: [{ source: "orct", target: "rct2" }],
   },
 
-  "purchase-request": {
-    title: "Purchase Request",
-    doc: "Internal request to buy. OPRQ header, PRQ1 rows — copied to a Purchase Quotation or Purchase Order.",
-    nodes: [
-      { id: "oprq", kind: "table", label: "OPRQ\n[HEADER]" },
-      { id: "prq1", kind: "table", label: "PRQ1\n[ROW]" },
-    ],
-    edges: [{ source: "oprq", target: "prq1" }],
-  },
-
-  "purchase-quotation": {
-    title: "Purchase Quotation",
-    doc: "Supplier quotation. OPQT header, PQT1 rows — copied to a Purchase Order.",
-    nodes: [
-      { id: "opqt", kind: "table", label: "OPQT\n[HEADER]" },
-      { id: "pqt1", kind: "table", label: "PQT1\n[ROW]" },
-    ],
-    edges: [{ source: "opqt", target: "pqt1" }],
-  },
-
   "purchase-order": {
     title: "Purchase Order",
-    doc: "Purchase Order sent to a supplier. OPOR header, POR1 rows — copied to a Goods Receipt PO.",
+    doc: "Purchase Order sent to a supplier. OPOR header, POR1 rows — closed by the supplier's AP Invoice.",
     nodes: [
       { id: "opor", kind: "table", label: "OPOR\n[HEADER]" },
       { id: "por1", kind: "table", label: "POR1\n[ROW]" },
     ],
     edges: [{ source: "opor", target: "por1" }],
-  },
-
-  "goods-receipt-po": {
-    title: "Goods Receipt PO",
-    doc: "Receipt of purchased goods against a Purchase Order. OPDN header, PDN1 rows (BaseType/BaseEntry/BaseLine point back at the PO). Not the same as the inventory Goods Receipt (OIGN). Posts an automatic journal entry for stock items (TransType 20), which the view doesn't read.",
-    nodes: [
-      { id: "opdn", kind: "table", label: "OPDN\n[HEADER]" },
-      { id: "pdn1", kind: "table", label: "PDN1\n[ROW]" },
-    ],
-    edges: [{ source: "opdn", target: "pdn1" }],
-  },
-
-  "goods-return": {
-    title: "Goods Return",
-    doc: "Return of received goods to a supplier. ORPD header, RPD1 rows — can be copied to an A/P Credit Memo. Posts an automatic journal entry for stock items (TransType 21), which the view doesn't read.",
-    nodes: [
-      { id: "orpd", kind: "table", label: "ORPD\n[HEADER]" },
-      { id: "rpd1", kind: "table", label: "RPD1\n[ROW]" },
-    ],
-    edges: [{ source: "orpd", target: "rpd1" }],
   },
 
   "outgoing-payment": {
@@ -665,16 +594,6 @@ export const diagrams = {
     edges: [{ source: "ovpm", target: "vpm2" }],
   },
 
-  "bill-of-materials": {
-    title: "Bill of Materials",
-    doc: "Bill of Materials for a parent item. OITT header, ITT1 component rows — used as the template for a Production Order's WOR1 lines.",
-    nodes: [
-      { id: "oitt", kind: "table", label: "OITT\n[HEADER]" },
-      { id: "itt1", kind: "table", label: "ITT1\n[COMPONENTS]" },
-    ],
-    edges: [{ source: "oitt", target: "itt1" }],
-  },
-
   "goods-issue": {
     title: "Goods Issue",
     doc: "Goods Issue (inventory out). OIGE header, IGE1 rows. Issue for Production is also stored here, with rows linked to the Production Order. Posts an automatic journal entry (TransType 60), which the view doesn't read.",
@@ -684,24 +603,8 @@ export const diagrams = {
     ],
     edges: [{ source: "oige", target: "ige1" }],
   },
-
-  "inventory-transfer-request": {
-    title: "Inventory Transfer Request",
-    doc: "Request to move stock between warehouses. OWTQ header, WTQ1 rows — copied to an Inventory Transfer.",
-    nodes: [
-      { id: "owtq", kind: "table", label: "OWTQ\n[HEADER]" },
-      { id: "wtq1", kind: "table", label: "WTQ1\n[ROW]" },
-    ],
-    edges: [{ source: "owtq", target: "wtq1" }],
-  },
-
-  "inventory-transfer": {
-    title: "Inventory Transfer",
-    doc: "Stock moved between warehouses. OWTR header, WTR1 rows (BaseType/BaseEntry/BaseLine point back at the request, if any). Posts an automatic journal entry (TransType 67) only when the warehouses use different inventory G/L accounts; the view doesn't read it.",
-    nodes: [
-      { id: "owtr", kind: "table", label: "OWTR\n[HEADER]" },
-      { id: "wtr1", kind: "table", label: "WTR1\n[ROW]" },
-    ],
-    edges: [{ source: "owtr", target: "wtr1" }],
-  },
 };
+
+// The main page also shows RPC's process outside SAP, and every root node gets
+// its detail island. Runs last: SAP nodes take their text from the pages above.
+consolidateRoot(diagrams);
