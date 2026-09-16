@@ -92,7 +92,9 @@ diagrams[key] = {
     kind?: "human" | "document" | "table" | "view" | "output",
     href?: string,        // opens "/process/<key>" (via the island when `detail` is set)
     note?: string,        // optional smaller detail line under the label
-    scope?: "sap" | "outside", // "outside" = a step done outside SAP B1; default "sap"
+    scope?: "sap" | "outside" | "shopfloor", // default "sap". Both non-SAP scopes are
+                          // outside SAP; each scope gets its own band in the "All" view
+                          // ("Shop floor and store", "Outside SAP Business One", "Inside…")
     unused?: string,      // an SAP document RPC's process doesn't use, and why
     detail?: {            // the island shown on click; every part optional
       body, who, where, sap, view, risk,

@@ -388,7 +388,10 @@ export const diagrams = {
       { id: "job-breakdown",      label: "RPC_JobBreakdown (VIEW)", kind: "view", href: "/process/job-breakdown", note: "12 blocks · 29 columns" },
     ],
     edges: [
-      // Sales: order → (delivery, read by block 2) → invoice → credit
+      // Sales: order → invoice → credit. RPC raises the AR Invoice straight from
+      // the Sales Order; the route through Delivery is the standard SAP one,
+      // drawn dotted because RPC creates no Deliveries (block 2 still reads them).
+      { source: "sales-order",        target: "ar-invoice" },
       { source: "sales-order",        target: "delivery" },
       { source: "delivery",           target: "ar-invoice" },
       { source: "ar-invoice",         target: "ar-credit-note" },

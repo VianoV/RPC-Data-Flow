@@ -487,6 +487,7 @@ body {
   background: color-mix(in srgb, var(--band-hue) 6%, transparent);
 }
 
+.band[data-scope="shopfloor"] { --band-hue: var(--kind-table); }
 .band[data-scope="outside"] { --band-hue: var(--kind-human); }
 .band[data-scope="sap"] { --band-hue: var(--kind-document); }
 
@@ -620,6 +621,7 @@ body {
   background: var(--badge-hue, var(--node-note));
 }
 
+.detail-island__badge[data-scope="shopfloor"] { --badge-hue: var(--kind-table); }
 .detail-island__badge[data-scope="outside"] { --badge-hue: var(--kind-human); }
 .detail-island__badge[data-scope="sap"] { --badge-hue: var(--kind-document); }
 

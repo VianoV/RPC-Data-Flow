@@ -33,8 +33,10 @@ export default function DetailIsland({ node, onClose, onOpen }) {
     >
       <div className="detail-island__head">
         <div className="detail-island__badges">
+          {/* Any non-SAP scope (outside, shop floor) reads as outside SAP; the
+              band on the canvas names which group it is in. */}
           <span className="detail-island__badge" data-scope={scope}>
-            {scope === "outside" ? "Outside SAP" : "Inside SAP"}
+            {scope === "sap" ? "Inside SAP" : "Outside SAP"}
           </span>
           {node.unused && (
             <span className="detail-island__badge" data-unused="">
