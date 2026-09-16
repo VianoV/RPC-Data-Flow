@@ -382,7 +382,7 @@ export const diagrams = {
 
       // Master data (looked up by the blocks)
       { id: "items",              label: "Items",              kind: "table", href: "/process/items",             note: "lookup · OITM / OITB" },
-      { id: "project",            label: "Project",            kind: "table", href: "/process/project",           note: "lookup · OPRJ / @SECTION" },
+      { id: "project",            label: "Project",            kind: "table", href: "/process/project",           note: "OPRJ + @SECTION · header or rows" },
       { id: "business-partners",  label: "Business Partners",  kind: "table", href: "/process/business-partners", note: "lookup · OCRD" },
 
       { id: "job-breakdown",      label: "RPC_JobBreakdown (VIEW)", kind: "view", href: "/process/job-breakdown", note: "12 blocks · 29 columns" },
@@ -426,8 +426,8 @@ export const diagrams = {
     title: "AR Invoice",
     doc: "Standard SAP B1 A/R Invoice. OINV holds the document header; INV1 holds the line rows that feed job revenue into RPC_JobBreakdown. Posts an automatic journal entry (TransType 13), which the view doesn't read.",
     nodes: [
-      { id: "oinv", kind: "table", label: "OINV\n[HEADER]" },
-      { id: "inv1", kind: "table", label: "INV1\n[ROW]" },
+      { id: "oinv", kind: "table", label: "OINV\n[HEADER]", note: "Project (header) · read first" },
+      { id: "inv1", kind: "table", label: "INV1\n[ROW]", note: "Project + U_Section (rows)\nlookups join here" },
     ],
     edges: [{ source: "oinv", target: "inv1" }],
   },
@@ -436,8 +436,8 @@ export const diagrams = {
     title: "AP Invoice",
     doc: "A/P Invoice. OPCH is the header, PCH1 the rows — supplier costs attributed to a job. Posts an automatic journal entry (TransType 18), which the view doesn't read.",
     nodes: [
-      { id: "opch", kind: "table", label: "OPCH\n[HEADER]" },
-      { id: "pch1", kind: "table", label: "PCH1\n[ROW]" },
+      { id: "opch", kind: "table", label: "OPCH\n[HEADER]", note: "Project (header) · read first" },
+      { id: "pch1", kind: "table", label: "PCH1\n[ROW]", note: "Project + U_Section (rows)\nlookups join here" },
     ],
     edges: [{ source: "opch", target: "pch1" }],
   },
@@ -464,10 +464,10 @@ export const diagrams = {
 
   "production-order": {
     title: "Production Order",
-    doc: "Production Order. OWOR header, WOR1 component/line rows. Closing the order posts an automatic journal entry for any variance (TransType 202), which the view doesn't read.",
+    doc: "Production Order. OWOR header, WOR1 component/line rows. The product is the dummy item PROD-1 — RPC doesn't use Bills of Materials — and orders are entered weekly, not per job. Closing the order posts an automatic journal entry for any variance (TransType 202), which the view doesn't read.",
     nodes: [
-      { id: "owor", kind: "table", label: "OWOR\n[HEADER]" },
-      { id: "wor1", kind: "table", label: "WOR1\n[ROW]" },
+      { id: "owor", kind: "table", label: "OWOR\n[HEADER]", note: "Project (header) · fallback" },
+      { id: "wor1", kind: "table", label: "WOR1\n[ROW]", note: "Project + U_Section (rows)\nread first · @SECTION INNER" },
     ],
     edges: [{ source: "owor", target: "wor1" }],
   },
@@ -503,16 +503,50 @@ export const diagrams = {
   },
 
   project: {
-    title: "Project",
-    doc: "Project structure. OPRJ holds SAP project codes; @PROJECT is the header UDO; @SECTION is a UDT of sections under a project. These provide the job/section dimension for the breakdown.",
+    title: "Project + Section",
+    dir: "LR",
+    doc: "Projects are created in OPRJ; sections live in @SECTION under its @PROJECT header, maintained through a custom form inside SAP B1. A document carries the project on its header or on its rows — the section only on its rows. Which one RPC_JobBreakdown reads depends on the block, and every OPRJ / @SECTION lookup joins from the row.",
     nodes: [
-      { id: "oprj",    kind: "table", label: "OPRJ\n[PROJECT CODES]" },
-      { id: "project-udo", kind: "table", label: "@PROJECT\n[HEADER UDO]" },
-      { id: "section-udt", kind: "table", label: "@SECTION\n[UDT]" },
+      { id: "form",        kind: "human",    label: "Project & Section Form", note: "custom SAP B1 screen" },
+      { id: "oprj",        kind: "table",    label: "OPRJ\n[SAP PROJECTS]", note: "PrjCode · PrjName" },
+      { id: "project-udo", kind: "table",    label: "@PROJECT\n[HEADER UDO]" },
+      {
+        id: "section-udt", kind: "table",    label: "@SECTION\n[SECTION ROWS]",
+        note: "one row per section of a project",
+        detail: {
+          sap: "A user-defined table of sections, keyed by project + section code, under the @PROJECT header UDO.",
+          view: "Joined as T6 (or T9) on project + U_Section; SectionName is its U_Name.",
+          risk: "Section is row-only — no document has a header section field. An empty U_Section becomes 'Unallocated'.",
+        },
+      },
+      {
+        id: "doc-header",  kind: "document", label: "Document HEADER\nProject",
+        note: "ORDR · OPOR · OINV · OPCH · OWOR",
+        detail: {
+          view: "Blocks 1–4 and 6 read the header's Project first, falling back to the row, then to 'RPC'. Blocks 5, 7 and 12 use it only when the row is empty.",
+          risk: "The OPRJ lookup joins from the ROW, so a project typed only here keeps its code but comes back as ProjectName 'No Project'.",
+        },
+      },
+      {
+        id: "doc-row",     kind: "document", label: "Document ROWS\nProject + U_Section",
+        note: "RDR1 · POR1 · INV1 · PCH1 · WOR1",
+        detail: {
+          sap: "The project sits on the row, and the section in U_Section on that same row.",
+          view: "Blocks 5, 7 and 12 read it first. Every OPRJ and @SECTION lookup joins from here, in every block.",
+          risk: "Blocks 7 and 12 join @SECTION INNER, so a production row whose project + section has no match is dropped entirely.",
+        },
+      },
+      { id: "view",        kind: "view",     label: "RPC_JobBreakdown (VIEW)", href: "/process/job-breakdown", note: "12 blocks · 29 columns" },
     ],
     edges: [
-      { source: "oprj", target: "project-udo" },
-      { source: "project-udo", target: "section-udt" },
+      { source: "form",        target: "project-udo", label: "maintains" },
+      { source: "project-udo", target: "section-udt", label: "sections under the project" },
+      { source: "oprj",        target: "project-udo", label: "project code" },
+      { source: "oprj",        target: "doc-header",  label: "project code" },
+      { source: "oprj",        target: "doc-row",     label: "project code" },
+      { source: "section-udt", target: "doc-row",     label: "section code" },
+      { source: "doc-header",  target: "view",        label: "read first by blocks 1–4, 6" },
+      { source: "doc-row",     target: "view",        label: "read first by 5, 7, 12 · all lookups" },
     ],
   },
 
@@ -558,8 +592,8 @@ export const diagrams = {
     title: "Sales Order",
     doc: "Sales Order confirming a customer's order. ORDR header, RDR1 rows.",
     nodes: [
-      { id: "ordr", kind: "table", label: "ORDR\n[HEADER]" },
-      { id: "rdr1", kind: "table", label: "RDR1\n[ROW]" },
+      { id: "ordr", kind: "table", label: "ORDR\n[HEADER]", note: "Project (header)" },
+      { id: "rdr1", kind: "table", label: "RDR1\n[ROW]", note: "Project + U_Section (rows)" },
     ],
     edges: [{ source: "ordr", target: "rdr1" }],
   },
@@ -576,10 +610,10 @@ export const diagrams = {
 
   "purchase-order": {
     title: "Purchase Order",
-    doc: "Purchase Order sent to a supplier. OPOR header, POR1 rows — closed by the supplier's AP Invoice.",
+    doc: "Purchase Order sent to a supplier. OPOR header, POR1 rows — closed by the supplier's AP Invoice. The view reads neither table; the project and section it carries reach RPC_JobBreakdown through the AP Invoice.",
     nodes: [
-      { id: "opor", kind: "table", label: "OPOR\n[HEADER]" },
-      { id: "por1", kind: "table", label: "POR1\n[ROW]" },
+      { id: "opor", kind: "table", label: "OPOR\n[HEADER]", note: "Project (header)" },
+      { id: "por1", kind: "table", label: "POR1\n[ROW]", note: "Project + U_Section (rows)" },
     ],
     edges: [{ source: "opor", target: "por1" }],
   },

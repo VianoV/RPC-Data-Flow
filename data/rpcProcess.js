@@ -130,9 +130,13 @@ const PROCESS_EDGES = [
   { source: "job-breakdown",       target: "crystal-report" },
   { source: "journal-entry",       target: "cash-flow-report" },
 
-  // SAP links the drawing adds.
-  { source: "sales-order",         target: "project", label: "tied to project" },
-  { source: "purchase-order",      target: "project", label: "tags project" },
+  // The project + section dimension is applied TO the documents. The drawing
+  // drew it the other way (Sales Order → "tied to project"), but the project and
+  // section aren't always set at the sales order, so the arrows run from the
+  // dimension to each document that carries it.
+  { source: "project",             target: "sales-order",      label: "project + section" },
+  { source: "project",             target: "purchase-order",   label: "project + section" },
+  { source: "project",             target: "production-order", label: "project + section" },
 ];
 
 // SAP documents RPC doesn't use are deleted from root, with one exception:
@@ -150,6 +154,12 @@ const SAP_DETAILS = {
   "ar-invoice": { who: "Finance, from the engineer's commercial invoice." },
   "ap-invoice": {
     risk: "In RPC's process the AP Invoice raises stock, but block 4 excludes stock lines — that cost reaches the view only when issued to a production order (block 12).",
+  },
+  project: {
+    who: "Projects are created in OPRJ; sections in @SECTION under its @PROJECT header, through a custom form inside SAP B1.",
+    sap: "A document carries the project on its header (ORDR / OPOR / OINV / OPCH / OWOR .Project) or on its rows (RDR1 / POR1 / INV1 / PCH1 / WOR1 .Project). The section is only ever on the rows, in U_Section.",
+    view: "Blocks 1–4 and 6 read the header project first and fall back to the row; blocks 5, 7 and 12 read the row first and fall back to the header. Both default to 'RPC'. Section is always the row's U_Section, defaulting to 'Unallocated'.",
+    risk: "Every OPRJ and @SECTION lookup joins from the ROW. A project typed only on the header still shows its code, but ProjectName comes back as 'No Project'. On production orders @SECTION is INNER-joined, so a row whose project + section has no match is dropped entirely.",
   },
   "production-order": {
     who: "A production clerk, weekly — not per job or project — adding the project and section on each line.",
